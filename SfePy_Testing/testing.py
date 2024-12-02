@@ -40,7 +40,7 @@ regions = {
 # Define temperatures based on depth.
 def soil_temp(depth):
     surface_temp = 0.0  # Surface temperature in Celsius
-    temp_gradient = 8.0  # Temperature difference in Celsius per unit depth
+    temp_gradient = 4.0  # Temperature difference in Celsius per unit depth
     return surface_temp + temp_gradient * depth
 
 # Apply soil temperature to initial condition.
