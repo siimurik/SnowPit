@@ -1,22 +1,34 @@
+r"""
+Transient advection-diffusion equation with divergence-free advection velocity.
+
+Find :math:`T` such that:
+
+.. math::
+    \int_{\Omega} s \pdiff{T}{t}
+    + \int_{\Omega} s \nabla \cdot \left(\ul{v} T \right)
+    + \int_{\Omega} D \nabla s \cdot \nabla T
+    = 0
+    \;, \quad \forall s \;.
+
+View the results using::
+
+  sfepy-view cube_medium_hexa.*.vtk -f T:wu 1:vw
 """
-FEM is very sensitive to boundary conditions. If bottom is surrounded by cold 
-temperature, heat won't progress at all. The same goes for the top which is 
-surrounded by cold temperatures.
-"""
+
 from __future__ import absolute_import
 from sfepy import data_dir
 import numpy as nm
 
 filename_mesh = data_dir + '/meshes/3d/cube_medium_hexa.mesh'
 
-# Time settings.
+# Time settings
 t0 = 0.0
-t1 = 10.0  # Final time.
-n_step = 100  # Number of time steps.
+t1 = 10.0
+n_step = 100
 
 # Define materials
 materials = {
-    'm': ({'D': 0.01, 'v': [[0.1], [0.0], [0.0]]},),
+    'm': ({'D': 1.0, 'v': [[0.0], [0.0], [0.5]]},),
 }
 
 # Define regions
@@ -41,17 +53,37 @@ variables = {
     's': ('test field', 'temperature', 'T'),
 }
 
+# Define essential boundary conditions (Dirichlet)
+soil_temp = 0.0  # °C
+bottom_temp = 4.0  # °C
 
-# Define temperatures based on depth.
-def soil_temp(depth):
-    surface_temp = 0.0  # Surface temperature in Celsius
-    temp_gradient = 4.0  # Temperature difference in Celsius per unit depth
-    return surface_temp + temp_gradient * depth
+ebcs = {
+    'T_left': ('Left', {'T.0': soil_temp}),
+    'T_right': ('Right', {'T.0': soil_temp}),
+    'T_front': ('Front', {'T.0': soil_temp}),
+    'T_back': ('Back', {'T.0': soil_temp}),
+    'T_bottom': ('Bottom', {'T.0': bottom_temp}),
+}
 
-# Apply soil temperature to initial condition.
-def get_ic(coor, ic):
-    depth = -coor[:, 2]  # Assuming z-axis points upwards
-    return soil_temp(depth)
+# Define Robin boundary condition on the top face
+robin_bc = {
+    'T_top': ('Top', {'T.0': 'get_robin_value'}),
+}
+
+# Define functions for Robin boundary condition
+# heat_source_value = 10.0  # Heat source value for Robin BC
+# def get_robin_value(ts, coors, **kwargs):
+#     return heat_source_value + 10.0 * ts.time  # Example: linear increase with time
+# 
+# # Define Robin boundary condition on the top face
+# robin_bc = {
+#     'T_top': ('Top', {'T.0': 'get_robin_value'}),
+# }
+# 
+# functions = {
+#     'get_robin_value': (get_robin_value,),
+# }
+
 
 # Robin boundary condition for the top face.
 ambient_temp = 4.0
@@ -62,15 +94,7 @@ def robin(ts, coor, bc=None, problem=None, **kwargs):
     T_inf = kwargs.get('T_inf', ambient_temp)  # Ambient temperature
     h = kwargs.get('h', heat_transfer_coef)  # Heat transfer coefficient
     q = kwargs.get('q', heat_flux)  # Solar radiation heat flux
-    return h * (coor[:, 2] - T_inf) + q  # Returns the values required for the LCBC
-
-# Boundary conditions.
-ground_temp = 4.0
-ebcs = {
-    #'fixed_left': ('Left', {'T.0': 5.0}),
-    #'fixed_right': ('Right', {'T.0': 5.0}),
-    'fixed_bottom': ('Bottom', {'T.0': ground_temp}),
-}
+    return h * (coor[:, 2] - T_inf) + q  # Returns the values required for
 
 bcs = {
     'top': ('Top', {'grad_t': (robin, {'T_inf': ambient_temp, 
@@ -79,15 +103,9 @@ bcs = {
     })}),
 }
 
-
 # Initial conditions.
 functions = {
-    'get_ic': (get_ic,),
     'robin': (robin,),
-}
-
-ics = {
-    'ic': ('Omega', {'T.0': 'get_ic'}),
 }
 
 # Define integrals

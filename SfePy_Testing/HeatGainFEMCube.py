@@ -8,7 +8,7 @@ filename_mesh = data_dir + '/meshes/3d/cube_medium_tetra.mesh'
 # Time settings.
 t0 = 0.0
 t1 = 10.0
-n_step = 100
+n_step = 200
 
 # Material properties. 
 material_1 = {
@@ -19,8 +19,8 @@ material_1 = {
 
 material_2 = {
     'name': 'm',
-    'values': {'D': 0.0001, 
-               'v': [[1.0], [1.0], [0.0]]}, # Diffusion coefficient
+    'values': {'D': 0.1, 
+               'v': [[1.0], [0.0], [0.0]]}, # Diffusion coefficient
     'kind': 'stationary', 
 }
 
@@ -33,7 +33,6 @@ materials = [
 # Fields.
 fields = {
     'temperature': ('real', 1, 'Omega', 1),
-    'concentration': ('real', 1, 'Omega', 1),
 }
 
 # Variables.
@@ -86,13 +85,13 @@ def get_ic(coor, ic=None):
     return nm.full(coor.shape[0], soil_temp) # °C
 
 functions = {
-    'get_ic': (get_ic,),
+    #'get_ic': (get_ic,),
     'robin': (robin,),
 }
 
-ics = {
-    'ic': ('Omega', {'T.0': 'get_ic'}),
-}
+#ics = {
+#    'ic': ('Omega', {'T.0': 'get_ic'}),
+#}
 
 # Integral.
 integrals = {
@@ -111,7 +110,7 @@ equations = {
     """
        dw_dot.i.Omega(s, dT/dt)
      + dw_advect_div_free.i.Omega(m.v, s, T)
-     - dw_laplace.i.Omega(m.D, s, T)    
+     + dw_laplace.i.Omega(m.D, s, T)    
      = 0
     """
 }
