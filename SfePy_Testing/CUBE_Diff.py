@@ -19,7 +19,8 @@ from __future__ import absolute_import
 from sfepy import data_dir
 import numpy as nm
 
-filename_mesh = data_dir + '/meshes/3d/cube_medium_hexa.mesh'
+#filename_mesh = data_dir + '/meshes/3d/cube_medium_hexa.mesh'
+filename_mesh = "C:\\Users\\sipuga\\Documents\\SnowStorageSolvers\\SfePy_Testing\\SnowPit\\cubeTetra.mesh"
 
 # Time settings
 t0 = 0.0
