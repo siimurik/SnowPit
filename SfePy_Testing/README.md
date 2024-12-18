@@ -11,9 +11,9 @@ $$
 $$
 
 where:
-- $T $ is the temperature.
-- $D $ is the diffusion coefficient.
-- $s $ is the test function.
+- $T$ is the temperature.
+- $D$ is the diffusion coefficient.
+- $s$ is the test function.
 - $\Omega$ is the domain over which the problem is defined (aka a volume in space, specifically a cube in our case).
 
 ## Boundary Conditions
@@ -29,7 +29,7 @@ where:
   - End time: 10.0 s
   - Number of time steps: 100
 - **Materials**: 
-  - Diffusion coefficient $D $: 0.01 m²/s
+  - Diffusion coefficient $D$: 0.01 m²/s
 - **Regions**: 
   - `Omega`: Entire domain
   - `Left`, `Right`, `Front`, `Back`, `Bottom`, `Top`: Facets of the cube
@@ -70,7 +70,7 @@ The **weak form** of an equation is a way of rewriting a differential equation s
 
 1. **Differential Equation**: This is the original form of the equation, which involves derivatives. For example, the heat equation involves the second derivative of temperature with respect to space.
 
-2. **Integral Form**: To convert the differential equation into an integral form, we multiply it by a test function $s$and integrate over the domain $\Omega$. This process is called "testing" the equation.
+2. **Integral Form**: To convert the differential equation into an integral form, we multiply it by a test function $s$ and integrate over the domain $\Omega$. This process is called "testing" the equation.
 
 3. **Integration by Parts**: This step reduces the order of the derivatives, making the equation easier to handle numerically. It also naturally incorporates boundary conditions.
 
@@ -92,7 +92,7 @@ $$
 -\frac{d^2 T}{dx^2} = f
 $$
 
-In the weak form, we multiply by a test function $s $and integrate:
+In the weak form, we multiply by a test function $s$ and integrate:
 
 $$
 \int_{\Omega} s \left( -\frac{d^2 T}{dx^2} \right) \, dx = \int_{\Omega} s f \, dx
@@ -126,7 +126,7 @@ $$
 
 ### Multiplying by a Test Function
 
-We multiply both sides by a test function $s $and integrate over the domain $\Omega $:
+We multiply both sides by a test function $s$ and integrate over the domain $\Omega$:
 
 $$
 \int_{\Omega} s \left( -\frac{d^2 T}{dx^2} \right) \, dx = \int_{\Omega} s f \, dx
@@ -134,13 +134,13 @@ $$
 
 ### Integration by Parts
 
-Integration by parts is used to move the derivative from $T $to $s $. The formula for integration by parts is:
+Integration by parts is used to move the derivative from $T$ to $s$. The formula for integration by parts is:
 
 $$
 \int u \frac{dv}{dx} \, dx = uv \bigg|_{\partial \Omega} - \int v \frac{du}{dx} \, dx
 $$
 
-In our case, let $u = s $and $dv = \frac{d^2 T}{dx^2} dx $. Applying integration by parts:
+In our case, let $u = s$and $dv = \frac{d^2 T}{dx^2} dx$. Applying integration by parts:
 
 $$
 \int_{\Omega} s \left( -\frac{d^2 T}{dx^2} \right) \, dx = - \left[ s \frac{dT}{dx} \right]_{\partial \Omega} + \int_{\Omega} \frac{ds}{dx} \frac{dT}{dx} \, dx
@@ -148,7 +148,7 @@ $$
 
 ### Boundary Terms
 
-The term $\left[ s \frac{dT}{dx} \right]_{\partial \Omega} $represents the boundary terms. If $s $is chosen such that it vanishes on the boundary (common in FEM), this term disappears.
+The term $\left[ s \frac{dT}{dx} \right]_{\partial \Omega}$ represents the boundary terms. If $s$ is chosen such that it vanishes on the boundary (common in FEM), this term disappears.
 
 ### Resulting Weak Form
 
@@ -158,9 +158,9 @@ $$
 \int_{\Omega} \frac{ds}{dx} \frac{dT}{dx} \, dx = \int_{\Omega} s f \, dx
 $$
 
-The minus sign disappears because it is absorbed during the integration by parts process. The derivative of $T $is transferred to $s $, and the sign change is a result of this transfer.
+The minus sign disappears because it is absorbed during the integration by parts process. The derivative of $T$ is transferred to $s$, and the sign change is a result of this transfer.
 
 ### Summary
 
 - The minus sign disappears due to integration by parts.
-- Integration by parts transfers the derivative from $T $to $s $, changing the sign in the process.
+- Integration by parts transfers the derivative from $T$ to $s$, changing the sign in the process.
