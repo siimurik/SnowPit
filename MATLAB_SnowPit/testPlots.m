@@ -92,11 +92,13 @@ f1 = figure('Name', '1');
 f1.WindowState = 'maximized';
 
 subplot(2, 1, 1);
-p1 = plot(storeh);
+time = datetime(2024, 1, 1) + days(0:size(Vf2, 2)-1);
+p1 = plot(time, storeh);
 axis tight;
 grid on;
 legend('HEIGHT');
-datetick('x', 'mmm');
+xtickformat('MMM')  % Format x-axis as month abbreviations
+%datetick('x', 'mmm');
 ylabel('Height [m]');
 p1(1).LineWidth = 1;
 title({' '; '\fontsize{16} \rm SNOWMELT VOLUME'; ' '});
@@ -104,31 +106,19 @@ title({' '; '\fontsize{16} \rm SNOWMELT VOLUME'; ' '});
 % PLOT SNOWMELT VARYING H
 % Create figure and subplot for Vf2
 subplot(2, 1, 2);
-
-% Transpose Vf2 to align with time (rows as datasets, columns as time)
 time = datetime(2024, 1, 1) + days(0:size(Vf2, 2)-1);
-p2 = plot(time, Vf2'); % Plot each dataset against time
-grid on;
-axis tight;
-
-% Set line properties for better distinction
-numLines = size(Vf2, 1); % Number of datasets
-colors = lines(numLines); % Generate distinct colors
-for k = 1:numLines
-    p2(k).Color = colors(k, :);
-    p2(k).LineWidth = 1.5;
-end
-
-% Add legend to match datasets
-legend({'TOTAL', 'SURFACE', 'RAIN', 'GROUND', 'COOLING', 'EXTRA'}, 'Location', 'Best'); 
-
-% Set x-axis format for datetime
-xtickformat('MMM'); % Format x-axis as month abbreviations
-
-% Add labels and title
-xlabel('Time');
+data = Vf2';
+plot(time, data(:,1), 'Color', '#0072BD')  % Plot TOTAL in blue
+hold on
+plot(time, data(:,3), 'Color', '#D95319')  % Plot SURFACE in orange
+plot(time, data(:,4), 'Color', '#EDB120')  % Plot RAIN in yellow
+plot(time, data(:,5), 'Color', '#7E2F8E')  % Plot GROUND in purple
+plot(time, data(:,6), 'Color', '#77AC30')  % Plot COOLING in green
+grid on
+axis tight
+xtickformat('MMM')  % Format x-axis as month abbreviations
+legend('TOTAL', 'SURFACE', 'RAIN', 'GROUND', 'COOLING')  % Update legend to include both data series
 ylabel('Volume [m^3]');
-title('Snowmelt Varying H');
 hold off
 
 figure(3)
@@ -213,7 +203,7 @@ datetick('x', 'mmm');
 ylabel('Volume [m^3]');
 grid on;
 
-Temp_in = zeros(1, 365);  % Assuming a maximum of 52 days (37 + 14 + 1)
+Temp_in = zeros(1, 365); 
 Temp_in(1) = 31;  % Initial temperature
 day = 1;
 for k = 1:7

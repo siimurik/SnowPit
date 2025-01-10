@@ -8,7 +8,8 @@ clear
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %%%%%%%%%%%%%%%%%%%% PROPERTIES %%%%%%%%%%%%%%%%%%%%%
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-a = 6; % Short side [m]
+disp('Initializing properties and loading weather data...');
+a = 6; % Short side [m] 
 b = 16; % Long side [m]
 alpha_degrees = 60; % Slope angle below surface
 beta_degrees = 45; % Slope angle above surface
@@ -34,6 +35,7 @@ hh = Prop(6);
 %% https://climate.weather.gc.ca/historical_data/search_historic_data_e.html
 filename1 = fullfile('Weather_Montreal_2018.xlsx');
 Table_weather = readmatrix(filename1); % Open Excel file
+disp('Weather data loaded successfully.');
 
 Geo = Geometry(Prop);
 Vi  = Geo(1) + Geo(2); % Initial volume of snow
@@ -46,17 +48,20 @@ Tmax = Table_weather(:, 10);
 P = Table_weather(:, 20); % Total Rain [mm]
 s = size(Tair);
 P(isnan(P)) = 0;
+disp('Initialization complete.');
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %%%%%%%%%%%%%%%%% MAIN LOOP %%%%%%%%%%%%%%%%%%%%%%%%%
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 birds_cycle(Table_weather);
 
+disp('Starting main loop with cooling...');
 % LOOP VARYING H WITH COOLING
-Vf2     = zeros(length(Vf), 365);   % Preallocating for speed
-Vnew2   = zeros(1, 365);            % Preallocating for speed
-storeh  = zeros(1, 365);            % Preallocating for speed
-for i = 1:s(1)
+num_of_days = s(2);
+Vf2     = zeros(length(Vf), num_of_days);   % Preallocating for speed
+Vnew2   = zeros(1, num_of_days);            % Preallocating for speed
+storeh  = zeros(1, num_of_days);            % Preallocating for speed
+for i = 1:s(1) % no idea how this works correctly since s(1) is "1" and s(2) is "365"
     Temp = Tair(i);
     Rain = P(i);
     day = i;
@@ -64,20 +69,23 @@ for i = 1:s(1)
     [V_melt, V_melt0, V_surf, V_rain, V_ground, V_cool] = Melted_Volume(Temp, Rain, Prop, day);
 
     Vf2(:, i) = [V_melt V_melt0 V_surf V_rain V_ground V_cool]'; % New Volume of the pile
-    Vnew2(i) = Vi - Vf2(1, i);
+    Vnew2(i) = Vi - Vf2(1, i); % NB! Vf2(1, i) = V_melt
 
     Vi = Vnew2(1, i);
 
-    h_new = findHeight(Vnew2(i), Prop); % New height of the pile
+    %h_new = findHeight(Vnew2(i), Prop); % Direct translation
+    h_new = findHeightNew(Vnew2(i), Prop); % More optimized function use
     storeh(i) = h_new;
 
     Prop(6) = h_new;
 end
+disp('Main loop with cooling completed.');
 
+disp('Starting main loop without cooling...');
 % LOOP VARYING H WITHOUT COOLING
-Vf0     = zeros(length(Vf), 365);   % Preallocating for speed
-Vnew0   = zeros(1, 365);            % Preallocating for speed
-storeh0 = zeros(1, 365);            % Preallocating for speed
+Vf0     = zeros(length(Vf), num_of_days);   % Preallocating for speed
+Vnew0   = zeros(1, num_of_days);            % Preallocating for speed
+storeh0 = zeros(1, num_of_days);            % Preallocating for speed
 for i = 1:s(1)  % no idea how this works since s(1) is 1 and s(2) is 365
     Temp = Tair(i);
     Rain = P(i);
@@ -86,38 +94,43 @@ for i = 1:s(1)  % no idea how this works since s(1) is 1 and s(2) is 365
     [V_melt, V_melt0, V_surf, V_rain, V_ground, V_cool] = Melted_Volume(Temp, Rain, Prop0, day);
 
     Vf0(:, i) = [V_melt V_melt0 V_surf V_rain V_ground V_cool]'; % New Volume of the pile
-    Vnew0(i) = Vi0 - Vf0(2, i);
+    Vnew0(i) = Vi0 - Vf0(2, i); % NB! Vf0(2, i) = V_melt0
 
     Vi0 = Vnew0(1, i);
-
-    h_new0 = findHeight(Vnew0(i), Prop); % New height of the pile
+    
+    % New height of the pile
+    %h_new = findHeight(Vnew2(i), Prop); % Direct translation
+    h_new0 = findHeightNew(Vnew0(i), Prop); % More optimized function use
     storeh0(i) = h_new0;
 
     Prop0(6) = h_new0;
 end
+disp('Main loop without cooling completed.');
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %%%%%%%%%%%%%%%%%%%%%%%% PLOT FEATURES %%%%%%%%%%%%%%%%%%%%%%
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
+disp('Plotting results...');
 %%%%%%%%%%%%%%%%% PLOT FIGURE 1 %%%%%%%%%%%%%%%%%
 f1 = figure('Name', '1');
 f1.WindowState = 'maximized';
 
 subplot(2, 1, 1);
-p1 = plot(storeh);
+time = datetime(2024, 1, 1) + days(0:size(Vf2, 2)-1);
+p1 = plot(time, storeh);
 axis tight;
 grid on;
 legend('HEIGHT');
-%xtickformat('MMM')  % Format x-axis as month abbreviations
-datetick('x', 'mmm');
+xtickformat('MMM')  % Format x-axis as month abbreviations
+%datetick('x', 'mmm');
 ylabel('Height [m]');
 p1(1).LineWidth = 1;
 title({' '; '\fontsize{16} \rm SNOWMELT VOLUME'; ' '});
 
 % PLOT SNOWMELT VARYING H
 subplot(2, 1, 2);
-time = datetime(2024, 1, 1) + days(0:size(Vf2, 2)-1);
+%time = datetime(2024, 1, 1) + days(0:size(Vf2, 2)-1);
 data = Vf2';
 plot(time, data(:,1), 'Color', '#0072BD')  % Plot TOTAL in blue
 hold on
@@ -138,68 +151,53 @@ f2 = figure('Name', '2');
 f2.WindowState = 'maximized';
 grid on;
 
-s = size(Vnew2);
-i = 1;
+%time = datetime(2024, 1, 1) + days(0:size(Vnew2, 2)-1);
 
-while i < s(2)
-    count = Vnew2(i);
-    if count < 0
-        break;
-    end
-    i = i + 1;
-end
-
-if i == s(2)
-    p3 = plot(1:1:i, Vnew2);
+% Plot snow pile with cooling
+i = find(Vnew2 < 0, 1);
+if isempty(i)
+    p3 = plot(time, Vnew2);
     p3(1).LineWidth = 1;
 else
-    zero = i + 1;
     Vnew2TOP = Vnew2;
     Vnew0LOW = Vnew2;
-    Vnew2TOP(zero:s(2)) = NaN;
-    Vnew0LOW(1:i) = NaN;
-    p3 = plot(Vnew2TOP);
+    Vnew2TOP(i:end) = NaN;
+    Vnew0LOW(1:i-1) = NaN;
+    p3 = plot(time, Vnew2TOP);
     hold on;
     col = get(p3, 'Color');
-    p4 = plot(Vnew0LOW, '--', 'Color', col, 'HandleVisibility', 'off');
+    p4 = plot(time, Vnew0LOW, '--', 'Color', col, 'HandleVisibility', 'off');
     p3(1).LineWidth = 1;
     p4(1).LineWidth = 1;
 end
 
 hold on;
 
-%% PLOT SNOW PILE WITHOUT COOLING
-while i < s(2)
-    count = Vnew0(i);
-    if count < 0
-        break;
-    end
-    i = i + 1;
-end
-
-if i == s(2)
-    p5 = plot(1:1:i, Vnew0);
+% Plot snow pile without cooling
+i = find(Vnew0 < 0, 1);
+if isempty(i)
+    p5 = plot(time, Vnew0);
     p5(1).LineWidth = 1;
 else
-    zero = i + 1;
     Vnew0TOP = Vnew0;
     Vnew0LOW = Vnew0;
-    Vnew0TOP(zero:s(2)) = NaN;
-    Vnew0LOW(1:i) = NaN;
-    p5 = plot(Vnew0TOP, '.');
+    Vnew0TOP(i:end) = NaN;
+    Vnew0LOW(1:i-1) = NaN;
+    p5 = plot(time, Vnew0TOP, '.');
     hold on;
     col = get(p5, 'Color');
-    p6 = plot(Vnew0LOW, '--', 'Color', col, 'HandleVisibility', 'off');
+    p6 = plot(time, Vnew0LOW, '--', 'Color', col, 'HandleVisibility', 'off');
     p5(1).LineWidth = 1;
     p6(1).LineWidth = 1;
 end
 
 legend('Volume WITHOUT Cooling', 'Volume WITH Cooling');
 title({' '; '\fontsize{16} \rm PILE VOLUME'; ' '});
-datetick('x', 'mmm');
-%xtickformat('MMM')  % Format x-axis as month abbreviations
+xtickformat('MMM');  % Format x-axis as month abbreviations
 ylabel('Volume [m^3]');
 grid on;
+
+disp('Plotting completed.');
 
 %%
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -243,7 +241,7 @@ function birds_cycle(Table_weather)
         rest = day + 14;
     
         for r = day:rest
-            Temp_in(r) = Table_weather(r,16);   % Max temp (r,10) or Heat Deg Days (r,16)???
+            Temp_in(r) = Table_weather(r,16);   % Max temp (r,10) or Heat Deg Days (r,16)??? 
         end
     
         Temp_in(rest) = 31;
@@ -386,4 +384,34 @@ function h_new = findHeight(V,Prop)
         h_new = -(V-Vol_below)/(m*100);
 
     end
+end
+
+% ALTERNATIVE VERSION OF THE findHeight() FUNCTION WITH BETTER
+% READABILITY AND OPTIMIZED FUNCTION USE
+function h_new = findHeightNew(V, Prop)
+    a = Prop(1);
+    b = Prop(2);
+    alpha = Prop(3);
+    beta = Prop(4);
+    d = Prop(5);
+
+    Vol_below = (d/3) * ((a*b) + (a - 2*d/tan(alpha)) * (b - 2*d/tan(alpha)) + sqrt((a*b)*(a - 2*d/tan(alpha)) * (b - 2*d/tan(alpha))));
+
+    if V > Vol_below
+        h_new = calculateHeight(V, Vol_below, a, b, beta);
+    else
+        h_new = -calculateHeight(Vol_below - V, 0, a, b, alpha);
+    end
+end
+
+function h = calculateHeight(V, V_offset, a, b, angle)
+    % Why it might be multiplied by 50?
+    % Prolly increases the number of iterations in the loop, allowing for finer
+    % resolution and more accurate calculations of the volume matrix.
+    % Max value that won't break the code is "100" but anything above that will 
+    % return complex values in "storeh". Very strange...
+    h_max = tan(angle) * a / 2.0 * 50.0;
+    Vol_matrix = arrayfun(@(i) (i/100/3) * ((a*b) + (a - 2*i/100/tan(angle)) * (b - 2*i/100/tan(angle)) + sqrt((a*b)*(a - 2*i/100/tan(angle)) * (b - 2*i/100/tan(angle)))), 1:h_max);
+    k = polyfit(Vol_matrix', (1:h_max)', 1);
+    h = (V - V_offset) / (k(1) * 100);
 end
