@@ -1,21 +1,14 @@
-%%%%%%%%%%%%%%%%%%%%%%%%%%%% SNOW MELT %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-% This code simulates the snowmelt and volume variation of the SSS
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-
 clc
 clear
 
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-%%%%%%%%%%%%%%%%%%%% PROPERTIES %%%%%%%%%%%%%%%%%%%%%
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 a = 6; % Short side [m]
 b = 16; % Long side [m]
 alpha_degrees = 60; % Slope angle below surface
 beta_degrees = 45; % Slope angle above surface
-d = 2; % Pit depth [m]
-h = 2; % Pile height [m]
-beta = beta_degrees * pi / 180;     % [rad]
-alpha = alpha_degrees * pi / 180;   % [rad]
+d = 2; % Pit depth
+h = 2; % Pile height
+beta = beta_degrees * pi / 180;
+alpha = alpha_degrees * pi / 180;
 Dw = 1000; % Density of water [kg m-3]
 Ds = 750; % Density of snow [kg m-3]
 Ls = 334000; % Latent heat of fusion [J kg-1]
@@ -36,8 +29,8 @@ filename1 = fullfile('Weather_Montreal_2018.xlsx');
 Table_weather = readmatrix(filename1); % Open Excel file
 
 Geo = Geometry(Prop);
-Vi  = Geo(1) + Geo(2); % Initial volume of snow
-Vi0 = Geo(1) + Geo(2); % Initial volume of snow
+Vi  = [Geo(1) + Geo(2)]; % Initial volume of snow
+Vi0 = [Geo(1) + Geo(2)]; % Initial volume of snow
 mass = Vi * Ds;
 
 Vf = [0 0 0 0 0 0]';
@@ -53,9 +46,6 @@ P(isnan(P)) = 0;
 birds_cycle(Table_weather);
 
 % LOOP VARYING H WITH COOLING
-Vf2     = zeros(length(Vf), 365);   % Preallocating for speed
-Vnew2   = zeros(1, 365);            % Preallocating for speed
-storeh  = zeros(1, 365);            % Preallocating for speed
 for i = 1:s(1)
     Temp = Tair(i);
     Rain = P(i);
@@ -75,10 +65,7 @@ for i = 1:s(1)
 end
 
 % LOOP VARYING H WITHOUT COOLING
-Vf0     = zeros(length(Vf), 365);   % Preallocating for speed
-Vnew0   = zeros(1, 365);            % Preallocating for speed
-storeh0 = zeros(1, 365);            % Preallocating for speed
-for i = 1:s(1)  % no idea how this works since s(1) is 1 and s(2) is 365
+for i = 1:s(1)
     Temp = Tair(i);
     Rain = P(i);
     day = i;
@@ -109,28 +96,54 @@ p1 = plot(storeh);
 axis tight;
 grid on;
 legend('HEIGHT');
-%xtickformat('MMM')  % Format x-axis as month abbreviations
 datetick('x', 'mmm');
 ylabel('Height [m]');
 p1(1).LineWidth = 1;
 title({' '; '\fontsize{16} \rm SNOWMELT VOLUME'; ' '});
 
 % PLOT SNOWMELT VARYING H
+% Create figure and subplot for Vf2
 subplot(2, 1, 2);
+
+% Transpose Vf2 to align with time (rows as datasets, columns as time)
 time = datetime(2024, 1, 1) + days(0:size(Vf2, 2)-1);
+p2 = plot(time, Vf2'); % Plot each dataset against time
+grid on;
+axis tight;
+
+% Set line properties for better distinction
+numLines = size(Vf2, 1); % Number of datasets
+colors = lines(numLines); % Generate distinct colors
+for k = 1:numLines
+    p2(k).Color = colors(k, :);
+    p2(k).LineWidth = 1.5;
+end
+
+% Add legend to match datasets
+legend({'TOTAL', 'SURFACE', 'RAIN', 'GROUND', 'COOLING', 'EXTRA'}, 'Location', 'Best'); 
+
+% Set x-axis format for datetime
+xtickformat('MMM'); % Format x-axis as month abbreviations
+
+% Add labels and title
+xlabel('Time');
+ylabel('Volume [m^3]');
+title('Snowmelt Varying H');
+hold off
+
+figure(3)
+clf  % Clear the current figure
 data = Vf2';
-plot(time, data(:,1), 'Color', '#0072BD')  % Plot TOTAL in blue
+plot(time, data(:,1), 'b')  % Plot TOTAL in blue
 hold on
-plot(time, data(:,3), 'Color', '#D95319')  % Plot SURFACE in orange
-plot(time, data(:,4), 'Color', '#EDB120')  % Plot RAIN in yellow
-plot(time, data(:,5), 'Color', '#7E2F8E')  % Plot GROUND in purple
-plot(time, data(:,6), 'Color', '#77AC30')  % Plot COOLING in green
+plot(time, data(:,3), 'r')  % Plot SURFACE in red
+plot(time, data(:,4), 'y')  % Plot RAIN in yellow
+plot(time, data(:,5), 'm')  % Plot GROUND in magenta
+plot(time, data(:,6), 'g')  % Plot COOLING in green
 grid on
 axis tight
 xtickformat('MMM')  % Format x-axis as month abbreviations
 legend('TOTAL', 'SURFACE', 'RAIN', 'GROUND', 'COOLING')  % Update legend to include both data series
-ylabel('Volume [m^3]');
-%p2(1).LineWidth = 1;
 
 %%%%%%%%%%%%%%%%% PLOT FIGURE 2 %%%%%%%%%%%%%%%%%
 % PLOT SNOW PILE WITH COOLING
@@ -197,9 +210,32 @@ end
 legend('Volume WITHOUT Cooling', 'Volume WITH Cooling');
 title({' '; '\fontsize{16} \rm PILE VOLUME'; ' '});
 datetick('x', 'mmm');
-%xtickformat('MMM')  % Format x-axis as month abbreviations
 ylabel('Volume [m^3]');
 grid on;
+
+Temp_in = zeros(1, 365);  % Assuming a maximum of 52 days (37 + 14 + 1)
+Temp_in(1) = 31;  % Initial temperature
+day = 1;
+for k = 1:7
+    end_day = day + 37;
+
+    for i = day:end_day
+        j = i + 1;
+        Temp_in(j) = Temp_in(i) - 0.26;
+    end
+
+    day = end_day + 1;
+    rest = day + 14;
+
+    for r = day:rest
+        Temp_in(r) = Table_weather(r,16);   % Max temp (r,10) or Heat Deg Days (r,16)???
+    end
+
+    Temp_in(rest) = 31;
+
+    day = rest;
+end
+Temp_in
 
 %%
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -228,27 +264,26 @@ function Geo = Geometry(Prop)
 end
 
 function birds_cycle(Table_weather)
-    Temp_in = zeros(1, 365);
-    Temp_in(1) = 31;  % Initial temperature
+    Temp_in = [31];
     day = 1;
     for k = 1:7
-        end_day = day + 37;
-    
-        for i = day:end_day
-            j = i + 1;
-            Temp_in(j) = Temp_in(i) - 0.26;
-        end
-    
-        day = end_day + 1;
-        rest = day + 14;
-    
-        for r = day:rest
-            Temp_in(r) = Table_weather(r,16);   % Max temp (r,10) or Heat Deg Days (r,16)???
-        end
-    
-        Temp_in(rest) = 31;
-    
-        day = rest;
+    end_day = day + 37;
+
+    for i = day:end_day
+        j = i + 1;
+        Temp_in(j) = Temp_in(i) - 0.26;
+    end
+
+    day = end_day + 1;
+    rest = day + 14;
+
+    for r = day:rest
+        Temp_in(r) = Table_weather(r,16);   % Max temp (r,10) or Heat Deg Days (r,16)???
+    end
+
+    Temp_in(rest) = 31;
+
+    day = rest;
     end
 end
 
@@ -340,9 +375,9 @@ function h_new = findHeight(V,Prop)
 
     if V > Vol_below
 
+        Vol_matrix = [0];
         h_max = tan(beta) * a / 2;
         h_max = h_max * 50;
-        Vol_matrix = zeros(1, int32(h_max)-1); % Using 'Vol_matrix = [0]' is lazy and not useful for translating into other languages
         for i = 1:h_max
             h = i/100;
             Vol = (h/3) * ( (a*b) + (a - 2*h/tan(beta)) * (b -2*h/tan(beta)) + sqrt((a*b)*(a - 2*h/tan(beta)) * (b - 2*h/tan(beta))));
@@ -350,15 +385,12 @@ function h_new = findHeight(V,Prop)
         end
         %% Ski resort tried to use 
         %[r,m,b] = regress(1:h_max,Vol_matrix);
-        % but instead opted to just using m = mean(Vol_matrix)
-        
-        %% New approach
+        %% but instead opted to just using m = mean(Vol_matrix)
         X = Vol_matrix';
         Y = (1:h_max)';
-        % Part of the Quebec code, but regression() is a depricated function and MATLAB suggests to use fitlm()  
-        % instead, which requires the use of Statistics and Machine Learning Toolbox. 
-        % From the code:
-        %       [r,m,b] = regression(1:h_max,Vol_matrix); 
+        % Part of the Quebec code, but regression() is a depricated function and MATLAB suggests to use fitlm() instead which requires 
+        % the use of Statistics and Machine Learning Toolbox. 
+        %[r,m,b] = regression(1:h_max,Vol_matrix); 
         %[r, m, b] = regress(Y, X)   % completely useless, does nothing what regression() or fitlm() is supposed to
         k = polyfit(X, Y, 1);  % much faster than fitlm() and more useful if the goal is to find the 'slope' of the linear curve
         m = k(1); % slope
@@ -367,12 +399,12 @@ function h_new = findHeight(V,Prop)
 
     else
 
-        d_max = tan(alpha) * a / 2.0;
+        Vol_matrix = [0];
+        d_max = tan(alpha) * a / 2;
         d_max = d_max * 50;
-        Vol_matrix = zeros(1, int32(d_max)-1);  % Using 'Vol_matrix = [0]' is lazy and not useful for translating into other languages
         for i = 1:d_max
             d = i/100;
-            Vol = (d/3.0) * ( (a*b) + (a - 2*d/tan(alpha)) * (b -2*d/tan(alpha)) + sqrt((a*b)*(a - 2*d/tan(alpha)) * (b -2*d/tan(alpha))));
+            Vol = (d/3) * ( (a*b) + (a - 2*d/tan(alpha)) * (b -2*d/tan(alpha)) + sqrt((a*b)*(a - 2*d/tan(alpha)) * (b -2*d/tan(alpha))));
             Vol = Vol_below - Vol;
         Vol_matrix(i) = Vol;
         end

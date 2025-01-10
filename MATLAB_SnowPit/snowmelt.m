@@ -332,22 +332,22 @@ function birds_cycle(Table_weather)
     Temp_in = [31];
     day = 1;
     for k = 1:7
-    end_day = day + 37;
+        end_day = day + 37;
 
-    for i = day:end_day
-        j = i + 1;
-        Temp_in(j) = Temp_in(i) - 0.26;
-    end
+        for i = day:end_day
+            j = i + 1;
+            Temp_in(j) = Temp_in(i) - 0.26;
+        end
 
-    day = end_day + 1;
-    rest = day + 14;
+        day = end_day + 1;
+        rest = day + 14;
 
-    for r = day:rest
-        Temp_in(r) = Table_weather(r,4);
-    end
+        for r = day:rest
+            Temp_in(r) = Table_weather(r,4);
+        end
 
-    Temp_in(rest) = 31;
+        Temp_in(rest) = 31;
 
-    day = rest;
+        day = rest;
     end
 end
