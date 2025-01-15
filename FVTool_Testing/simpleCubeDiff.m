@@ -12,10 +12,11 @@
 %
 
 clc
+clear
 
 %% Define the domain and create a mesh structure
 L = 50;  % domain length
-Nx = 10; % number of cells
+Nx = 11; % number of cells
 m = createMesh3D(Nx, Nx, Nx, L, L, L);
 
 %% Create the boundary condition structure
@@ -34,7 +35,7 @@ BC.top.a(:) = 1; BC.top.b(:) = 0.1; BC.top.c(:) = heat_source_value; % Robin bou
 D_val = 1;
 D = createCellVariable(m, D_val);
 alfa = createCellVariable(m, 1);
-u = createFaceVariable(m, [0,0,0.5]);
+%u = createFaceVariable(m, [0,0,0.5]);
 
 %% Define initial values
 c_init = 0; % starting temperature of 0 on all faces
@@ -46,13 +47,13 @@ Dave = harmonicMean(D);
 Mdiff = diffusionTerm(Dave);
 [Mbc, RHSbc] = boundaryCondition(BC);
 FL = fluxLimiter('Superbee');
-Mconv = convectionTvdTerm(u, c, FL);
+%Mconv = convectionTvdTerm(u, c, FL);
 dt = 1; % time step
 final_t = 50;
 
 for t = dt:dt:final_t
     [M_trans, RHS_trans] = transientTerm(c_old, dt, alfa);
-    M = M_trans - Mdiff + Mbc + Mconv;
+    M = M_trans - Mdiff + Mbc;% + Mconv;
     RHS = RHS_trans + RHSbc;
     c = solvePDE(m, M, RHS);
     c_old = c;
