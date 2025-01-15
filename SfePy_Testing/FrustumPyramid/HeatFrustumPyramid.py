@@ -46,7 +46,7 @@ fields = {
 # Define variables
 variables = {
     'T': (  'unknown field', 'temperature', 
-            0,    # The time derivative order (0 means a steady-state problem; 1 would mean a transient problem).
+            1,    # The time derivative order (0 means a steady-state problem; 1 would mean a transient problem).
             1),   # The approximation order (consistent with the field’s order).
             's': ('test field', 'temperature', 'T'),  # The test field
 }
