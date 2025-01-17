@@ -1,7 +1,9 @@
-from __future__ import absolute_import
-from sfepy import data_dir
 import numpy as nm
-import csv
+from sfepy import data_dir
+from sfepy.discrete.probes import LineProbe
+import matplotlib.pyplot as plt
+import os
+
 
 filename_mesh = data_dir + '/meshes/3d/cylinder.mesh'
 
@@ -9,16 +11,16 @@ t0 = 0.0
 t1 = 0.1
 n_step = 101
 
-material_2 = {
-    'name': 'coef',
-    'values': {'val': 0.01},
-    'kind': 'stationary',  # 'stationary' or 'time-dependent'
-}
+#material_2 = {
+#    'name': 'coef',
+#    'values': {'val': 0.01},
+#    'kind': 'stationary',  # 'stationary' or 'time-dependent'
+#}
 
-material_3 = {
-    'name': 'external_source',
-    'values': {'q_ext': 5.0},  # Heat flux on the right boundary (W/m^2)
-}
+#material_3 = {
+#    'name': 'external_source',
+#    'values': {'q_ext': 5.0},  # Heat flux on the right boundary (W/m^2)
+#}
 
 nominal_heat_flux = 6.36e5
 alpha = 0.25
@@ -28,7 +30,7 @@ t_stop = nm.array([10., 30., 50.])  # times when heating stops (seconds)
 h = 10.0  # W/m2/K
 T0 = -2.0  # °C
 materials = {
-    'flux' : ({'val' : -50.0},),
+    'flux' : ({'val' : 25.0},),
     'm': ({'D': 0.01,},),  
     'heat_loss': ({ 'h_bot': -h, 'T_bot_inf': T0,
                     'h_top': -h, 'T_top_inf': T0},)
@@ -49,13 +51,17 @@ variable_1 = {
     'order': 0,
     'history': 1,
 }
+
 variable_2 = {
     'name': 's',
     'kind': 'test field',
     'field': 'temperature',
-    'dual': 'T',
+    'dual': 'T',  
 }
 
+# In Sfepy, boundaries are often defied with a slight offset 
+# from the actual boundary. This is to avoid numerical issues and 
+# makes the code more robust and less prone to numerical errors.
 regions = {
     'Omega': 'all',
     'Gamma_Left': ('vertices in (x < 0.00001)', 'facet'),
@@ -75,6 +81,7 @@ ebcs = {
 #    nx = (coor[:, 0] - mi) / (ma - mi)
 #    return nm.where((nx > 0.25) & (nx < 0.75), 8.0 * (nx - 0.5), 0.0)
 
+# Not neccessary, since it can be more easily handled by ics.
 def get_ic(coor, ic):
     return -2.0
 
@@ -107,7 +114,7 @@ integral_1 = {
 equations = {
     'Temperature': """
     dw_dot.i.Omega( s, dT/dt ) + dw_laplace.i.Omega( m.D, s, T ) =
-    - dw_integrate.i.Gamma_Right(flux.val, s)
+    + dw_integrate.i.Gamma_Right(flux.val, s)
     + dw_bc_newton.i.Gamma_Right(heat_loss.h_top, heat_loss.T_top_inf, s, T)
     """
 }
@@ -171,18 +178,56 @@ solver_2 = {
 #        writer.writerow([ts.time, flux])
 #    print(f"Time: {ts.time}, Heat Flux: {flux}")
 
+
+
+mm = 1e-3
+def gen_probe():
+    """Instantiates a line probe used later by the `step_hook` function."""
+    p0, p1 = nm.array([0., 0., -10. * mm]), nm.array([0.0, 0.0, 15. * mm])
+    line_probe = LineProbe(p0, p1, n_point=100, share_geometry=True)
+    return line_probe
+
+
+line_probe = gen_probe()
+# inits an empty list that will hold the probe results
+probe_results = []
+
+
+def step_hook(pb, ts, variables):
+    """
+    This implements a function that gets called at every step from the
+    time-solver.
+    """
+    T_field = pb.get_variables()['T']
+    pars, vals = line_probe(T_field)
+    probe_results.append(vals)
+
+
+def post_process_hook(out, pb, state, extend=False):
+    ts = pb.ts
+    if ts.step == ts.n_step - 1:
+        fig, (ax1, ax2) = plt.subplots(nrows=2)
+        temperature_image = nm.array(probe_results).squeeze()
+        m = ax1.imshow(temperature_image.T, origin='lower', aspect='auto')
+        ax1.set_xlabel("time step")
+        ax1.set_ylabel("distance across build\nplate and cylinder")
+        fig.colorbar(m, ax=ax1, label="temperature")
+        ax2.plot(temperature_image.T[0], label="bottom")
+        ax2.plot(temperature_image.T[-1], label="top")
+        ax2.set_xlabel("time step")
+        ax2.set_ylabel("temperature (°C)")
+        ax2.legend()
+        fig.tight_layout()
+        fig.savefig(os.path.join(pb.output_dir, 'heat_probe_time_evolution.png'),
+                    bbox_inches='tight')
+    return out
+
 options = {
-#    'post_process_hook': 'save_flux',
+    'step_hook': 'step_hook',
+    'post_process_hook': 'post_process_hook',
     'nls': 'newton',
     'ls': 'ls',
     'ts': 'ts',
     'save_times': 'all',
     'output_dir': './output_robin',  # Directory to save the output
 }
-
-## Ensure the CSV file has headers
-#with open('heat_flux.csv', mode='w', newline='') as file:
-#    writer = csv.writer(file)
-#    writer.writerow(['Time', 'Heat Flux'])
-#
-#print("The simulation will save heat flux values to heat_flux.csv file.")

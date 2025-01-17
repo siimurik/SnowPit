@@ -11,21 +11,22 @@ top_width  = 16.0
 bottom_length = 4.0
 bottom_width  = 8.0
 height = 4.0
+char_length = 1.0  # Characteristic length for mesh refinement
 
 # Add points for the top rectangle
 top_points = [
-    gmsh.model.occ.addPoint(-top_length / 2, -top_width / 2, height),
-    gmsh.model.occ.addPoint(top_length / 2, -top_width / 2, height),
-    gmsh.model.occ.addPoint(top_length / 2, top_width / 2, height),
-    gmsh.model.occ.addPoint(-top_length / 2, top_width / 2, height),
+    gmsh.model.occ.addPoint(-top_length / 2, -top_width / 2, height, char_length),
+    gmsh.model.occ.addPoint(top_length / 2, -top_width / 2, height, char_length),
+    gmsh.model.occ.addPoint(top_length / 2, top_width / 2, height, char_length),
+    gmsh.model.occ.addPoint(-top_length / 2, top_width / 2, height, char_length),
 ]
 
 # Add points for the bottom rectangle
 bottom_points = [
-    gmsh.model.occ.addPoint(-bottom_length / 2, -bottom_width / 2, 0),
-    gmsh.model.occ.addPoint(bottom_length / 2, -bottom_width / 2, 0),
-    gmsh.model.occ.addPoint(bottom_length / 2, bottom_width / 2, 0),
-    gmsh.model.occ.addPoint(-bottom_length / 2, bottom_width / 2, 0),
+    gmsh.model.occ.addPoint(-bottom_length / 2, -bottom_width / 2, 0, char_length),
+    gmsh.model.occ.addPoint(bottom_length / 2, -bottom_width / 2, 0, char_length),
+    gmsh.model.occ.addPoint(bottom_length / 2, bottom_width / 2, 0, char_length),
+    gmsh.model.occ.addPoint(-bottom_length / 2, bottom_width / 2, 0, char_length),
 ]
 
 # Add lines for the top and bottom rectangles
