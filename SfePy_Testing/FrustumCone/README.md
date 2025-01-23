@@ -11,12 +11,12 @@ The heat transfer problem is governed by the following equations:
 ### Governing Equation
 $$
 \begin{aligned}
-\frac{\partial T}{\partial t} &= D \nabla^2 T  && \forall x \in \Omega, \forall t \in [t_0, t_1],
+\frac{\partial T}{\partial t} &= \alpha \nabla^2 T  && \forall x \in \Omega, \forall t \in [t_0, t_1],
 \end{aligned}
 $$
 where:
 - $T$ is the temperature in the domain ( $^\circ\text{C}$ ),
-- $D$ is the thermal diffusivity ( $\text{m}^2/\text{s}$ ),
+- $\alpha$ is the thermal diffusivity ( $\text{m}^2/\text{s}$ ),
 - $\Omega$ is the domain of the frustum cone.
 
 ### Boundary Conditions
@@ -24,7 +24,7 @@ where:
    Convective heat transfer and heat flux at the top boundary:
    $$
    \begin{aligned}
-   -D \nabla T \cdot n &= q(t) + h_{\text{top}}(T - T_{\text{top\_inf}}) && \forall x \in \Gamma_{\text{top}},
+   -\alpha \nabla T \cdot n &= q(t) + h_{\text{top}}(T - T_{\text{top\_inf}}) && \forall x \in \Gamma_{\text{top}},
    \end{aligned}
    $$
    where:
@@ -57,6 +57,38 @@ T(x, 0) &= T_0 && \forall x \in \Omega,
 $$
 where $T_0 = -2.0  ^\circ\text{C}$.
 
+# Thermal diffusion coefficient
+
+The diffusion coefficient in the heat equation, often denoted as $ D $ or $ \alpha $, is a measure of how quickly heat spreads through a material. It is determined by the material's properties and can be calculated using the formula:
+
+$$
+\alpha = \frac{k}{\rho c_p}
+$$
+
+where:
+- $ k $ is the thermal conductivity of the material,
+- $ \rho $ is the density of the material,
+- $ c_p $ is the specific heat capacity at constant pressure[1](https://www.tec-science.com/thermodynamics/heat/heat-equation-diffusion-equation/)[2](https://www.uni-muenster.de/imperia/md/content/physik_tp/lectures/ws2016-2017/num_methods_i/heat.pdf).
+
+This coefficient appears in the heat equation, which in one dimension is written as:
+
+$$
+\frac{\partial T}{\partial t} = \alpha \frac{\partial^2 T}{\partial x^2}
+$$
+
+Here, $ T $ is the temperature, $ t $ is time, and $ x $ is the spatial coordinate[2](https://www.uni-muenster.de/imperia/md/content/physik_tp/lectures/ws2016-2017/num_methods_i/heat.pdf).
+
+# Mass Diffusion vs Thermal Diffusion
+
+The diffusion coefficient is sometimes denoted as $ D $ and sometimes as $ \alpha $ depending on the context and the specific type of diffusion being described.
+
+- **$ D $**: This symbol is commonly used in the context of **mass diffusion** (e.g., the diffusion of particles, molecules, or gases). It represents the diffusivity or diffusion coefficient in Fick's laws of diffusion.
+
+- **$ \alpha $**: This symbol is typically used in the context of **thermal diffusion** (heat conduction). It represents the thermal diffusivity in the heat equation.
+
+Both symbols essentially describe how quickly something spreads out, but they are used in different fields to avoid confusion. $ D $ is used for mass diffusion, while $ \alpha $ is used for thermal diffusion.
+
+Does that help clarify things? Feel free to ask if you have more questions!
 ---
 
 ## Simulation Setup
@@ -68,7 +100,7 @@ C:\Users\sipuga\Documents\SnowStorageSolvers\SfePy_Testing\SnowPit\FrustumCone\f
 ```
 
 ### Material Properties
-- Thermal diffusivity: $D = 0.01 \, \text{m}^2/\text{s}$.
+- Thermal diffusivity: $\alpha = 0.01 \, \text{m}^2/\text{s}$.
 
 ### Boundary Heat Loss
 - Heat transfer coefficient: $h = 10.0 \, \text{W/m}^2/\text{K}$,
@@ -99,10 +131,10 @@ Here’s a refined and more correct version of the **first formulation**, ensuri
 
 $$
 \begin{aligned}
-\frac{\partial T}{\partial t} &= D \nabla^2 T  && \forall x \in \Omega, \forall t \in [t_0, t_1], \\
--D \nabla T \cdot n &= q(t) + h_{top}(T - T_{\text{top\_inf}}) && \forall x \in \Gamma_{\text{top}}, \\
-T &= 2.0 && \forall x \in \Gamma_{\text{bottom}}, \\
-\nabla T \cdot n &= 0 && \forall x \in \Gamma_{\text{side}}.
+\frac{\partial T}{\partial t} &= \alpha \nabla^2 T  && \forall (x,y,z) \in \Omega, \forall t \in [t_0, t_1], \\
+-\alpha \nabla T \cdot n &= q(t) + h_{top}(T - T_{\text{top\_inf}}) && \forall (x,y,z) \in \Gamma_{\text{top}}, \\
+T &= 2.0 && \forall (x,y,z) \in \Gamma_{\text{bottom}}, \\
+\nabla T \cdot n &= 0 && \forall (x,y,z) \in \Gamma_{\text{side}}.
 \end{aligned}
 $$
 
@@ -110,11 +142,11 @@ $$
 
 ### Changes Made:
 1. **Sign Consistency**:
-   - The heat diffusion equation $ \frac{\partial T}{\partial t} = D \nabla^2 T $ is written in its standard form (positive $D \nabla^2 T$).
-   - The boundary flux condition on $\Gamma_{\text{top}}$ is expressed as $-D \nabla T \cdot n$, which is the outward diffusive heat flux.
+   - The heat diffusion equation $ \frac{\partial T}{\partial t} = \alpha \nabla^2 T $ is written in its standard form (positive $\alpha \nabla^2 T$).
+   - The boundary flux condition on $\Gamma_{\text{top}}$ is expressed as $-\alpha \nabla T \cdot n$, which is the outward diffusive heat flux.
 
 2. **Boundary Flux on $\Gamma_{\text{top}}$**:
-   - The term $-D \nabla T \cdot n = q(t) + h_{top}(T - T_{\text{top\_inf}})$ is now explicitly consistent with the heat flux condition. Here:
+   - The term $-\alpha \nabla T \cdot n = q(t) + h_{top}(T - T_{\text{top\_inf}})$ is now explicitly consistent with the heat flux condition. If (\alpha \nabla T \cdot n) is negative, heat is entering the object (inward flux). Here:
      - $q(t)$ represents any additional flux (e.g., external source/sink).
      - $h_{top}(T - T_{\text{top\_inf}})$ models convective heat transfer.
 
@@ -140,11 +172,11 @@ To derive the weak integral form of the given problem step by step, we follow th
 ### **1. Multiply the PDE by a test function and integrate over the domain**
 Introduce a test function $s(x)$ from a suitable function space, and multiply both sides of the governing equation by $s$:
 $$
-s \frac{\partial T}{\partial t} = s D \nabla^2 T \quad \text{in } \Omega.
+s \frac{\partial T}{\partial t} = s \alpha \nabla^2 T \quad \text{in } \Omega.
 $$
 Integrate over the domain $\Omega$:
 $$
-\int_\Omega s \frac{\partial T}{\partial t} \, d\Omega = \int_\Omega s D \nabla^2 T \, d\Omega.
+\int_\Omega s \frac{\partial T}{\partial t} \, d\Omega = \int_\Omega s \alpha \nabla^2 T \, d\Omega.
 $$
 
 ---
@@ -161,20 +193,20 @@ This is the time-dependent contribution and remains as-is in the weak form.
 ### **3. Apply integration by parts to the second-order spatial term**
 For the Laplacian term $\nabla^2 T$, use the vector calculus identity and integration by parts:
 $$
-\int_\Omega s D \nabla^2 T \, d\Omega = -\int_\Omega D \nabla s \cdot \nabla T \, d\Omega + \int_{\partial \Omega} s D \nabla T \cdot n \, d\Gamma,
+\int_\Omega s \alpha \nabla^2 T \, d\Omega = -\int_\Omega \alpha \nabla s \cdot \nabla T \, d\Omega + \int_{\partial \Omega} s \alpha \nabla T \cdot n \, d\Gamma,
 $$
 where $n$ is the outward unit normal on the boundary $\partial \Omega$.
 
-- The first term $-\int_\Omega D \nabla s \cdot \nabla T \, d\Omega$ becomes part of the weak formulation.
-- The second term $\int_{\partial \Omega} s D \nabla T \cdot n \, d\Gamma$ involves boundary contributions.
+- The first term $-\int_\Omega \alpha \nabla s \cdot \nabla T \, d\Omega$ becomes part of the weak formulation.
+- The second term $\int_{\partial \Omega} s \alpha \nabla T \cdot n \, d\Gamma$ involves boundary contributions.
 
 ---
 
 ### **4. Apply boundary conditions**
 Substitute the boundary conditions to simplify the boundary integral term:
-1. On $\Gamma_{\text{top}}$, $-D \nabla T \cdot n = q(t) + h_{\text{top}}(T - T_{\text{top\_inf}})$:
+1. On $\Gamma_{\text{top}}$, $-\alpha \nabla T \cdot n = q(t) + h_{\text{top}}(T - T_{\text{top\_inf}})$:
    $$
-   \int_{\Gamma_{\text{top}}} s (-D \nabla T \cdot n) \, d\Gamma = \int_{\Gamma_{\text{top}}} s \big(q(t) + h_{\text{top}}(T - T_{\text{top\_inf}})\big) \, d\Gamma.
+   \int_{\Gamma_{\text{top}}} s (-\alpha \nabla T \cdot n) \, d\Gamma = \int_{\Gamma_{\text{top}}} s \big(q(t) + h_{\text{top}}(T - T_{\text{top\_inf}})\big) \, d\Gamma.
    $$
 
 2. On $\Gamma_{\text{bottom}}$, $T = 2.0$:
@@ -189,7 +221,7 @@ Substitute the boundary conditions to simplify the boundary integral term:
 The weak form is obtained by combining all terms:
 $$
 \int_\Omega s \frac{\partial T}{\partial t} \, d\Omega 
-- \int_\Omega D \nabla s \cdot \nabla T \, d\Omega
+- \int_\Omega \alpha \nabla s \cdot \nabla T \, d\Omega
 + \int_{\Gamma_{\text{top}}} s \big(q(t) + h_{\text{top}}(T - T_{\text{top\_inf}})\big) \, d\Gamma = 0.
 $$
 
@@ -206,7 +238,7 @@ The weak form of the problem is:
 $$
 \begin{aligned}
 \int_\Omega s \frac{\partial T}{\partial t} \, d\Omega 
-- \int_\Omega D \nabla s \cdot \nabla T \, d\Omega 
+- \int_\Omega \alpha \nabla s \cdot \nabla T \, d\Omega 
 + \int_{\Gamma_{\text{top}}} s \big(q(t) + h_{\text{top}}(T - T_{\text{top\_inf}})\big) \, d\Gamma &= 0, \\
 T &= 2.0 && \text{on } \Gamma_{\text{bottom}}, \\
 T(x, 0) &= T_0 && \text{in } \Omega.
@@ -221,7 +253,7 @@ You're on the right track conceptually, but there are some clarifications to con
 # **Neumann Boundary Conditions**
 
 1. **Adding Neumann Terms**:
-   Neumann boundary conditions specify the flux $q_n = -D \nabla T \cdot n$ on a given boundary. In the weak form, these terms appear as integrals over the respective boundary:
+   Neumann boundary conditions specify the flux $q_n = -\alpha \nabla T \cdot n$ on a given boundary. In the weak form, these terms appear as integrals over the respective boundary:
    $$
    \int_{\Gamma} q_n \, s \, d\Gamma.
    $$
@@ -254,7 +286,7 @@ The correct equation should be:
 ```python
 equations = {
     'Temperature': """
-    dw_dot.i.Omega( s, dT/dt ) + dw_laplace.i.Omega( m.D, s, T ) =
+    dw_dot.i.Omega( s, dT/dt ) + dw_laplace.i.Omega( m.\alpha, s, T ) =
     + dw_integrate.i.Gamma_Top(flux.val, s)
     + dw_bc_newton.i.Gamma_Top(heat_loss.h_top, heat_loss.T_top_inf, s, T)
     """
