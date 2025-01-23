@@ -11,7 +11,7 @@ top_width  = 16.0
 bottom_length = 4.0
 bottom_width  = 8.0
 height = 4.0
-char_length = 1.0  # Characteristic length for mesh refinement
+char_length = 0.90  # Characteristic length for mesh refinement
 
 # Add points for the top rectangle
 top_points = [
