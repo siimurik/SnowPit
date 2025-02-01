@@ -284,7 +284,13 @@ def Psat_WV(T_K):
     x = math.exp(x) * Pc
     
     return x
+
 Psat_vec = []
 for i in range(len(air_temp_vec)):
     Psat_vec.append(Psat_WV(air_temp_vec[i] + 273.15)/10.0) # hPa; 100/1000 to convert to hPa
 printVec(Psat_vec, column_name=" Water vapour saturation pressure (hPa)")
+
+# Extract the amount of precipitation column from the data
+RH_perc_vec_raw = [row[17] for row in rdata]
+RH_perc_vec = convert_to_type(RH_perc_vec_raw, dtype=float)
+printVec(prec_vec, column_name="Relative Humidity Percipitation (m/h)")
