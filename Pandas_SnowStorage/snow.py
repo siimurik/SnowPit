@@ -1,66 +1,64 @@
+"""
+>   git add snow.py
+>   git commit -m "Your commit message here"
+>   git push origin main
+"""
+
 import chardet
 import math
 import csv
 
-# Detect the encoding of the file
-with open('Snow_Storage_Data.csv', 'rb') as rawdata:
-    result = chardet.detect(rawdata.read(100000))
-    encoding = result['encoding']
+def detect_encoding(file_path):
+    """
+    Detect the encoding of the given CSV file.
 
-print(encoding)
+    Parameters:
+    file_path (str): The path to the CSV file.
 
-# Create an empty list to store the data
-data = []
+    Returns:
+    str: The detected encoding of the file.
+    """
+    with open(file_path, 'rb') as rawdata:
+        result = chardet.detect(rawdata.read(100000))
+        return result['encoding']
 
-# Define the indices of the columns you want to keep
-columns_to_keep = []
-for i in range(18):
-    columns_to_keep.append(i)  
+def read_csv_with_encoding(file_path, columns_to_keep=None):
+    """
+    Read the CSV file with the detected encoding and keep specified columns.
 
-# Read the CSV file with the detected encoding
-with open('Snow_Storage_Data.csv', 'r', encoding=encoding) as file:
-    reader = csv.reader(file)
-    header = next(reader)  # Skip the first row (header)
-    for row in reader:
-        selected_row = [row[i] for i in columns_to_keep]
-        data.append(selected_row)
+    Parameters:
+    file_path (str): The path to the CSV file.
+    columns_to_keep (list, optional): A list of indices of columns to keep. 
+                                      If None, all columns will be kept.
 
-# Display the first column of each row
-for row in data[:5]:
-    print(row[9])   # row[9] - YEAR column
+    Returns:
+    list: A list of rows with only the specified columns (or all columns if none specified).
+    """
+    encoding = detect_encoding(file_path)
+    print(f"\nDetected encoding: {encoding}")
 
-# Find the index where the first NaN value appears in the 'YEAR.1' column (assuming it's the 5th column, change if needed)
-first_nan_index = None
-for index, row in enumerate(data):
-    try:
-        if row[9].strip() == '':
-            first_nan_index = index
-            break
-    except IndexError:
-        continue
+    data = []
+    with open(file_path, 'r', encoding=encoding) as file:
+        reader = csv.reader(file)
+        header = next(reader)  # Read the header to determine the number of columns
+        max_columns = len(header)
 
-print(first_nan_index)
+        # If no columns specified, keep all columns
+        if columns_to_keep is None:
+            columns_to_keep = list(range(max_columns))
 
-# Get '2023-04-01T00:00' format time data from 7th column
-time_column = [row[6] for row in data]
+        for row in reader:
+            selected_row = [row[i] for i in columns_to_keep]
+            data.append(selected_row)
+    
+    return data
 
 # Function to find the index of a specific value in a given column
 def find_index(column_data, value):
     for index, item in enumerate(column_data):
         if item == value:
             return index
-    return 
-
-# Find the start and end indices
-period_start_in = find_index(time_column, '2023-04-01T00:00')
-period_end_in   = find_index(time_column, '2023-08-31T23:00')
-
-# Slice the data to include only the desired period
-#df_wo_nan_period = data[period_start_in:period_end_in + 1]  # +1 to include the end index
-
-# Display the sliced data
-#for row in data[period_start_in:period_end_in]:
-#    print(row[7])
+    return None
 
 def convert_to_type(data, dtype=float):
     if dtype not in [float, int]:
@@ -126,111 +124,6 @@ def printVec(data, column_name="Unnamed"):
 
     print(f"Name: {column_name}, Length: {length}, dtype: {data_type}")
 
-printVec(time_column)
-rdata = data[period_start_in:period_end_in+1] # rdata - "ranged data"
-printAny(rdata, column_name="All data")
-
-# Get air temperature data and assign it to a vector
-air_temp_vec_raw = [row[7] for row in rdata]
-air_temp_vec = convert_to_type(air_temp_vec_raw, dtype=float)
-printVec(air_temp_vec, column_name="Air temperature (Celsius)")
-
-# Get air velocity data and assign it to a vector
-air_vel_vec_raw = [row[15] for row in rdata]
-air_vel_vec = convert_to_type(air_vel_vec_raw, dtype=float)
-printVec(air_vel_vec, column_name="Air velocity (m/s)")
-
-# Extract the amount of precipitation column from the data
-prec_vec_raw = [row[5] for row in rdata]
-prec_vec = convert_to_type(prec_vec_raw, dtype=float)
-printVec(prec_vec, column_name="Precipitation (m/h)")
-
-# Extract the global solar irradiance (W/m2) column from the data
-glob_solir_vec_raw = [row[12] for row in rdata]
-glob_solir_vec = convert_to_type(glob_solir_vec_raw, dtype=float)
-printVec(glob_solir_vec, column_name="Global solar irradiance (W/m2)")
-
-# Heat transfer coefficient at the external surface
-h = 22.7 # W/(m^2K)
-# Solar light absorptivity
-alpha = 0.8
-# Correction factor for horizontal surface
-T_cor_fact = 4.0 # °C
-T_sol_air_vec = []
-for i in range(len(air_temp_vec)):
-    T_sol_air_vec.append(alpha * glob_solir_vec[i] / h + air_temp_vec[i] - T_cor_fact)
-printVec(T_sol_air_vec, column_name="Solar-Air (Celsius)")
-
-# Insulation layer thickness
-d_ins = 0.1 # m
-# Thermal conductivity for the insulating material
-lam_i = 0.32 # W/(mK)
-# The surface area (m2) of the pile of snow
-A_surf = 210.0 # m^2
-# The rate of heat transfer from the snow pile to the air
-Q_surf_vec = []
-for i in range(len(T_sol_air_vec)):
-    Q_surf_vec.append(A_surf * lam_i / d_ins * (T_sol_air_vec[i] - 0.0))    # W
-printVec(Q_surf_vec, column_name="Surface power (W)")
-
-L_f = 333.4E03 # J/kg; latent heat of fusion
-rho_snow = 411.0 # kg/m^3; density of snow
-# The rate of melted snow from surface melt
-f_srf_melt_vec = []
-for i in range(len(Q_surf_vec)):
-    f_srf_melt_vec.append(Q_surf_vec[i]/(L_f * rho_snow)) # m^3/s
-printVec(f_srf_melt_vec, column_name="Surface melt rate (m^3/s)") 
-
-# Hourly rate of melted snow from surface melt
-hrly_srf_total_vec = []
-for i in range(len(f_srf_melt_vec)):
-    hrly_srf_total_vec.append(f_srf_melt_vec[i] * 3600) # m^3/h
-printVec(hrly_srf_total_vec, column_name="Hourly rate of surface melt (m^3/h)")
-
-# Initialize q_rain_vec with zeros
-q_rain_vec = [0.0] * len(air_vel_vec)
-
-# Constants
-rho_water = 1000.0  # kg/m3
-c_water   = 4.19E03  # J/(kg*K)
-
-# Initialize pos_temp_mark and calculate heat flux
-pos_temp_mark = []
-for i in range(len(air_temp_vec)):
-    if air_temp_vec[i] > 0.0:
-        q_rain_vec[i] = prec_vec[i] * rho_water * c_water * air_temp_vec[i] / 3600.0
-#        pos_temp_mark.append(True)
-#    else:
-#        pos_temp_mark.append(False)
-
-# Display results
-#print(pos_temp_mark[:5])
-printVec(q_rain_vec, column_name="Hourly melt rate from surface (m^3/h)")
-
-# Hourly rain volume
-v_rain_vec = []
-for i in range(len(air_temp_vec)):
-    v_rain_vec.append(prec_vec[i] * A_surf * rho_water * c_water * air_temp_vec[i] / (L_f * rho_snow)) # m^3/h
-printVec(v_rain_vec, column_name="Hourly melt rate from rain (m^3/h)")
-
-# Calculate the surface melt rate where the temperature is greater than 0
-SMR_temp_vec = [0.0] * len(air_vel_vec)
-for i in range(len(air_temp_vec)):
-    if air_temp_vec[i] > 0.0:
-        SMR_temp_vec[i] = hrly_srf_total_vec[i] * rho_snow / A_surf # m^3/h
-printVec(SMR_temp_vec, column_name="SMR due to T")
-
-# Surface melt rate due to rain
-SMR_rain_vec = []
-for i in range(len(v_rain_vec)):
-    SMR_rain_vec.append(v_rain_vec[i] * rho_snow / A_surf) # m^3/h
-printVec(SMR_rain_vec, column_name="SMR due to rain (m^3/h)")
-
-SMR_total_vec = []
-for i in range(len(SMR_temp_vec)):
-    SMR_total_vec.append(SMR_temp_vec[i] + SMR_rain_vec[i])
-printVec(SMR_total_vec, column_name="Combined toal SMR (m^3/h)")
-
 def cumsum(values):
     cum_sum = []
     total = 0
@@ -238,16 +131,6 @@ def cumsum(values):
         total += value
         cum_sum.append(total)
     return cum_sum
-
-# Cumulative sum of the SMR with rain together with temperature
-SMR_rainT_vec = cumsum(SMR_total_vec)
-printVec(SMR_rainT_vec, column_name="Rain and T cumulative (m^3/h)")
-
-emp1_SMR_vec = []
-for i in range(len(air_temp_vec)):
-    emp1_SMR_vec.append(-0.09 + 0.00014*glob_solir_vec[i] + 0.0575*air_temp_vec[i] + 
-                        0.0012*air_temp_vec[i]*air_vel_vec[i] - 0.18*air_temp_vec[i]*d_ins) # kg/m2/h
-printVec(emp1_SMR_vec, column_name="Empirical 1")
 
 def calculate_exp(x, terms=20):
     result = 1.0
@@ -285,12 +168,262 @@ def Psat_WV(T_K):
     
     return x
 
-Psat_vec = []
-for i in range(len(air_temp_vec)):
-    Psat_vec.append(Psat_WV(air_temp_vec[i] + 273.15)/10.0) # hPa; 100/1000 to convert to hPa
-printVec(Psat_vec, column_name=" Water vapour saturation pressure (hPa)")
+def main():
+    # Detect the encoding of the file
+    with open('Snow_Storage_Data.csv', 'rb') as rawdata:
+        result = chardet.detect(rawdata.read(100000))
+        encoding = result['encoding']
 
-# Extract the amount of precipitation column from the data
-RH_perc_vec_raw = [row[17] for row in rdata]
-RH_perc_vec = convert_to_type(RH_perc_vec_raw, dtype=float)
-printVec(prec_vec, column_name="Relative Humidity Percipitation (m/h)")
+    print(encoding)
+
+    # Create an empty list to store the data
+    data = []
+
+    # Define the indices of the columns you want to keep
+    columns_to_keep = []
+    for i in range(18):
+        columns_to_keep.append(i)  
+
+    # Read the CSV file with the detected encoding
+    with open('Snow_Storage_Data.csv', 'r', encoding=encoding) as file:
+        reader = csv.reader(file)
+        header = next(reader)  # Skip the first row (header)
+        for row in reader:
+            selected_row = [row[i] for i in columns_to_keep]
+            data.append(selected_row)
+
+    # Display the first column of each row
+    for row in data[:5]:
+        print(row[9])   # row[9] - YEAR column
+
+    # Find the index where the first NaN value appears in the 'YEAR.1' column (assuming it's the 5th column, change if needed)
+    first_nan_index = None
+    for index, row in enumerate(data):
+        try:
+            if row[9].strip() == '':
+                first_nan_index = index
+                break
+        except IndexError:
+            continue
+
+    print(first_nan_index)
+
+    # Get '2023-04-01T00:00' format time data from 7th column
+    time_column = [row[6] for row in data]
+
+    # Find the start and end indices
+    period_start_in = find_index(time_column, '2023-04-01T00:00')
+    period_end_in   = find_index(time_column, '2023-08-31T23:00')
+
+    # Slice the data to include only the desired period
+    #df_wo_nan_period = data[period_start_in:period_end_in + 1]  # +1 to include the end index
+
+    # Display the sliced data
+    #for row in data[period_start_in:period_end_in]:
+    #    print(row[7])
+
+    printVec(time_column)
+    rdata = data[period_start_in:period_end_in+1] # rdata - "ranged data"
+    printAny(rdata, column_name="All data")
+
+    # Get air temperature data and assign it to a vector
+    air_temp_vec_raw = [row[7] for row in rdata]
+    air_temp_vec = convert_to_type(air_temp_vec_raw, dtype=float)
+    printVec(air_temp_vec, column_name="Air temperature (Celsius)")
+
+    # Get air velocity data and assign it to a vector
+    air_vel_vec_raw = [row[15] for row in rdata]
+    air_vel_vec = convert_to_type(air_vel_vec_raw, dtype=float)
+    printVec(air_vel_vec, column_name="Air velocity (m/s)")
+
+    # Extract the amount of precipitation column from the data
+    prec_vec_raw = [row[5] for row in rdata]
+    prec_vec = convert_to_type(prec_vec_raw, dtype=float)
+    printVec(prec_vec, column_name="Precipitation (m/h)")
+
+    # Extract the global solar irradiance (W/m2) column from the data
+    glob_solir_vec_raw = [row[12] for row in rdata]
+    glob_solir_vec = convert_to_type(glob_solir_vec_raw, dtype=float)
+    printVec(glob_solir_vec, column_name="Global solar irradiance (W/m2)")
+
+    # Heat transfer coefficient at the external surface
+    h = 22.7 # W/(m^2K)
+    # Solar light absorptivity
+    alpha = 0.8
+    # Correction factor for horizontal surface
+    T_cor_fact = 4.0 # °C
+    T_sol_air_vec = []
+    for i in range(len(air_temp_vec)):
+        T_sol_air_vec.append(alpha * glob_solir_vec[i] / h + air_temp_vec[i] - T_cor_fact)
+    printVec(T_sol_air_vec, column_name="Solar-Air (Celsius)")
+
+    # Insulation layer thickness
+    d_ins = 0.1 # m
+    # Thermal conductivity for the insulating material
+    lam_i = 0.32 # W/(mK)
+    # The surface area (m2) of the pile of snow
+    A_surf = 210.0 # m^2
+    # The rate of heat transfer from the snow pile to the air
+    Q_surf_vec = []
+    for i in range(len(T_sol_air_vec)):
+        Q_surf_vec.append(A_surf * lam_i / d_ins * (T_sol_air_vec[i] - 0.0))    # W
+    printVec(Q_surf_vec, column_name="Surface power (W)")
+
+    L_f = 333.4E03 # J/kg; latent heat of fusion
+    rho_snow = 411.0 # kg/m^3; density of snow
+    # The rate of melted snow from surface melt
+    f_srf_melt_vec = []
+    for i in range(len(Q_surf_vec)):
+        f_srf_melt_vec.append(Q_surf_vec[i]/(L_f * rho_snow)) # m^3/s
+    printVec(f_srf_melt_vec, column_name="Surface melt rate (m^3/s)") 
+
+    # Hourly rate of melted snow from surface melt
+    hrly_srf_total_vec = []
+    for i in range(len(f_srf_melt_vec)):
+        hrly_srf_total_vec.append(f_srf_melt_vec[i] * 3600) # m^3/h
+    printVec(hrly_srf_total_vec, column_name="Hourly rate of surface melt (m^3/h)")
+
+    # Initialize q_rain_vec with zeros
+    q_rain_vec = [0.0] * len(air_vel_vec)
+
+    # Constants
+    rho_water = 1000.0  # kg/m3
+    c_water   = 4.19E03  # J/(kg*K)
+
+    # Initialize pos_temp_mark and calculate heat flux
+    pos_temp_mark = []
+    for i in range(len(air_temp_vec)):
+        if air_temp_vec[i] > 0.0:
+            q_rain_vec[i] = prec_vec[i] * rho_water * c_water * air_temp_vec[i] / 3600.0
+    #        pos_temp_mark.append(True)
+    #    else:
+    #        pos_temp_mark.append(False)
+
+    # Display results
+    #print(pos_temp_mark[:5])
+    printVec(q_rain_vec, column_name="Hourly melt rate from surface (m^3/h)")
+
+    # Hourly rain volume
+    v_rain_vec = []
+    for i in range(len(air_temp_vec)):
+        v_rain_vec.append(prec_vec[i] * A_surf * rho_water * c_water * air_temp_vec[i] / (L_f * rho_snow)) # m^3/h
+    printVec(v_rain_vec, column_name="Hourly melt rate from rain (m^3/h)")
+
+    # Calculate the surface melt rate where the temperature is greater than 0
+    SMR_temp_vec = [0.0] * len(air_vel_vec)
+    for i in range(len(air_temp_vec)):
+        if air_temp_vec[i] > 0.0:
+            SMR_temp_vec[i] = hrly_srf_total_vec[i] * rho_snow / A_surf # m^3/h
+    printVec(SMR_temp_vec, column_name="SMR due to T")
+
+    # Surface melt rate due to rain
+    SMR_rain_vec = []
+    for i in range(len(v_rain_vec)):
+        SMR_rain_vec.append(v_rain_vec[i] * rho_snow / A_surf) # m^3/h
+    printVec(SMR_rain_vec, column_name="SMR due to rain (m^3/h)")
+
+    SMR_total_vec = []
+    for i in range(len(SMR_temp_vec)):
+        SMR_total_vec.append(SMR_temp_vec[i] + SMR_rain_vec[i])
+    printVec(SMR_total_vec, column_name="Combined toal SMR (m^3/h)")
+
+    # Cumulative sum of the SMR with rain together with temperature
+    SMR_rainT_vec = cumsum(SMR_total_vec)
+    printVec(SMR_rainT_vec, column_name="Rain and T cumulative (m^3/h)")
+
+    emp1_SMR_vec = []
+    for i in range(len(air_temp_vec)):
+        emp1_SMR_vec.append(-0.09 + 0.00014*glob_solir_vec[i] + 0.0575*air_temp_vec[i] + 
+                            0.0012*air_temp_vec[i]*air_vel_vec[i] - 0.18*air_temp_vec[i]*d_ins) # kg/m2/h
+    printVec(emp1_SMR_vec, column_name="Empirical 1")
+
+    Psat_vec = []
+    for i in range(len(air_temp_vec)):
+        Psat_vec.append(Psat_WV(air_temp_vec[i] + 273.15)/10.0) # hPa; 100/1000 to convert to hPa
+    printVec(Psat_vec, column_name=" Water vapour saturation pressure (hPa)")
+
+    # Extract the amount of RH precipitation column from the data
+    RH_perc_vec_raw = [row[17] for row in rdata]
+    RH_perc_vec = convert_to_type(RH_perc_vec_raw, dtype=float)
+    printVec(prec_vec, column_name="Relative Humidity Percipitation (m/h)")
+
+    # Water steam pressure
+    Pw_vec = []
+    for i in range(len(RH_perc_vec)):
+        Pw_vec.append(Psat_vec[i]*RH_perc_vec[i]/100.0) # kPa
+    printVec(Pw_vec, column_name = "Water steam pressure (kPa)")
+
+    # Absolute humidity
+    w_vec = []
+    for i in range(len(Pw_vec)):
+        w_vec.append(2.16679*Pw_vec[i]*1000/(273.15+air_temp_vec[i])) # kPa; 1000 to convert to kPa
+    printVec(w_vec, column_name="Absolute humidity (kPa)")
+
+    # Surface melt rate from insulation thickness, air velocity, light intensity, air temperature and air humidity
+    emp2_SMR_vec = []
+    for i in range(len(air_temp_vec)):
+        emp2_SMR_vec.append(- 0.97 - 0.097*(d_ins*100) + 0.164*air_vel_vec[i] + 0.00175*glob_solir_vec[i] 
+                            + 0.102*air_temp_vec[i] + 0.192*w_vec[i]) # kg/m2/h
+    printVec(emp2_SMR_vec, column_name="Empirical 2")
+
+    # Create a vector for emp1_SMR with condition ('wc')
+    # This vector sets values to 0 if either the SMR or air temperature is below 0,
+    # otherwise it retains the original SMR value from emp1_SMR_vec.
+    emp1_SMR_wc_vec = [ # 'wc' - with condition
+        0.0 if (smr < 0 or air_temp < 0) else smr 
+        for smr, air_temp in zip(emp1_SMR_vec, air_temp_vec)
+    ]
+    printVec(emp1_SMR_wc_vec, column_name="Empirical 1 (pos. cond)")
+
+    # Create a vector for emp2_SMR_vec with condition ('cond')
+    # This vector sets values to 0 if either the SMR or air temperature is below 0,
+    # otherwise it retains the original SMR value from emp2_SMR_vec.
+    emp2_SMR_wc_vec = [
+        0.0 if (smr < 0 or air_temp < 0) else smr 
+        for smr, air_temp in zip(emp2_SMR_vec, air_temp_vec)
+    ]
+    printVec(emp2_SMR_wc_vec, column_name="Empirical 2 (pos. cond)")
+
+    # Cumulative sum of pos. empirical methods
+    emp1_SMR_wc_cs_vec = cumsum(emp1_SMR_wc_vec) # 'cs' - Cumulative Sum
+    printVec(emp1_SMR_wc_cs_vec, column_name="Cumulative sum - Emp 1")
+    emp2_SMR_wc_cs_vec = cumsum(emp2_SMR_wc_vec) # 'cs' - Cumulative Sum
+    printVec(emp2_SMR_wc_cs_vec, column_name="Cumulative sum - Emp 2")
+
+    # Reading in new data
+    file_path = 'Tsi_Tso_Data.csv'
+    data2 = read_csv_with_encoding(file_path)  # This will read all columns by default
+    printAny(data2)
+
+    # If you want to keep specific columns
+    #columns_to_keep = list(range(1))  # Define the indices of the columns you want to keep
+    #data_with_specific_columns = read_csv_with_encoding(file_path, columns_to_keep)
+    #printAny(data_with_specific_columns)
+
+    Tsi_vec_raw = [row[0] for row in data2[1:]] # data2[1:] - exclude first row which contains the name
+    #printAny(Tsi_vec_raw)
+    Tsi_vec = convert_to_type(Tsi_vec_raw, dtype=float)
+    printVec(Tsi_vec, column_name="Tsi (Celsius)")
+
+    Tso_vec_raw = [row[1] for row in data2[1:]] # data2[1:] - exclude first row which contains the name
+    Tso_vec = convert_to_type(Tso_vec_raw, dtype=float)
+    printVec(Tso_vec, column_name="Tso (Celsius)")
+
+    ho_vec = [
+        6.0 + 4.0*vel if vel <= 5.0 else 7.41*(vel**0.78)
+        for vel in air_vel_vec
+    ]
+    printVec(ho_vec, column_name="# Air velocity (with cond)")
+
+    # Heat transfer coefficient at the internal surface:
+    h_i = 99.75 # W/m^2*K
+    # Heat flux in
+    qi_vec = []
+    for i in range(len(Tsi_vec)):
+        qi_vec.append((Tsi_vec[i] - 0.0)*h_i) # W/m^2
+    printVec(qi_vec, column_name="Heat flux in (w/m^2)")
+
+
+# End of main() section
+if __name__ == "__main__":
+    main()
