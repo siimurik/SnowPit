@@ -6,6 +6,7 @@
 
 import chardet
 import math
+import time
 import csv
 
 def detect_encoding(file_path):
@@ -551,4 +552,7 @@ def main():
 # End of main() section
 
 if __name__ == "__main__":
+    t0 = time.time()
     main()
+    t1 = time.time()
+    print(f"\nElapsed time: {t1-t0:.3e} sec.")
