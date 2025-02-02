@@ -246,16 +246,29 @@ def main():
     glob_solir_vec = convert_to_type(glob_solir_vec_raw, dtype=float)
     printVec(glob_solir_vec, column_name="Global solar irradiance (W/m2)")
 
+    #------------------------------------------------------------------------
+
     # Heat transfer coefficient at the external surface
     h = 22.7 # W/(m^2K)
     # Solar light absorptivity
     alpha = 0.8
     # Correction factor for horizontal surface
     T_cor_fact = 4.0 # °C
-    T_sol_air_vec = []
-    for i in range(len(air_temp_vec)):
-        T_sol_air_vec.append(alpha * glob_solir_vec[i] / h + air_temp_vec[i] - T_cor_fact)
+    
+    #T_sol_air_vec = []
+    #for i in range(len(air_temp_vec)):
+    #    T_sol_air_vec.append(alpha * glob_solir_vec[i] / h + air_temp_vec[i] - T_cor_fact)
+    
+    # Alternative version:
+    # Improved efficiency with list comprehension
+    T_sol_air_vec = [
+        alpha * glob_solir / h + air_temp - T_cor_fact 
+        for glob_solir, air_temp in 
+        zip(glob_solir_vec, air_temp_vec)
+    ]
     printVec(T_sol_air_vec, column_name="Solar-Air (Celsius)")
+
+    #------------------------------------------------------------------------
 
     # Insulation layer thickness
     d_ins = 0.1 # m
@@ -263,79 +276,152 @@ def main():
     lam_i = 0.32 # W/(mK)
     # The surface area (m2) of the pile of snow
     A_surf = 210.0 # m^2
+    
     # The rate of heat transfer from the snow pile to the air
-    Q_surf_vec = []
-    for i in range(len(T_sol_air_vec)):
-        Q_surf_vec.append(A_surf * lam_i / d_ins * (T_sol_air_vec[i] - 0.0))    # W
+    #Q_surf_vec = []
+    #for i in range(len(T_sol_air_vec)):
+    #    Q_surf_vec.append(A_surf * lam_i / d_ins * (T_sol_air_vec[i] - 0.0))    # W
+
+    # More efficient version
+    Q_surf_vec = [
+        A_surf * lam_i / d_ins * (T_sol_air - 0.0)
+        for T_sol_air in T_sol_air_vec
+    ]
     printVec(Q_surf_vec, column_name="Surface power (W)")
+
+    #------------------------------------------------------------------------
 
     L_f = 333.4E03 # J/kg; latent heat of fusion
     rho_snow = 411.0 # kg/m^3; density of snow
+    
     # The rate of melted snow from surface melt
-    f_srf_melt_vec = []
-    for i in range(len(Q_surf_vec)):
-        f_srf_melt_vec.append(Q_surf_vec[i]/(L_f * rho_snow)) # m^3/s
+    #f_srf_melt_vec = []
+    #for i in range(len(Q_surf_vec)):
+    #    f_srf_melt_vec.append(Q_surf_vec[i]/(L_f * rho_snow)) # m^3/s
+
+    f_srf_melt_vec = [Q_surf / (L_f*rho_snow) for Q_surf in Q_surf_vec]
     printVec(f_srf_melt_vec, column_name="Surface melt rate (m^3/s)") 
 
+    #------------------------------------------------------------------------
+
     # Hourly rate of melted snow from surface melt
-    hrly_srf_total_vec = []
-    for i in range(len(f_srf_melt_vec)):
-        hrly_srf_total_vec.append(f_srf_melt_vec[i] * 3600) # m^3/h
-    printVec(hrly_srf_total_vec, column_name="Hourly rate of surface melt (m^3/h)")
+    #hrly_srf_total_vec = []
+    #for i in range(len(f_srf_melt_vec)):
+    #    hrly_srf_total_vec.append(f_srf_melt_vec[i] * 3600.0) # m^3/h
+
+    hrly_srf_total_vec = [f_srf_melt*3600.0 for f_srf_melt in f_srf_melt_vec]
+    printVec(hrly_srf_total_vec, column_name="Hourly total SMR (m^3/h)")
+
+    #------------------------------------------------------------------------
 
     # Initialize q_rain_vec with zeros
-    q_rain_vec = [0.0] * len(air_vel_vec)
+    #q_rain_vec = [0.0] * len(air_vel_vec)
 
     # Constants
     rho_water = 1000.0  # kg/m3
     c_water   = 4.19E03  # J/(kg*K)
 
     # Initialize pos_temp_mark and calculate heat flux
-    pos_temp_mark = []
-    for i in range(len(air_temp_vec)):
-        if air_temp_vec[i] > 0.0:
-            q_rain_vec[i] = prec_vec[i] * rho_water * c_water * air_temp_vec[i] / 3600.0
+    #pos_temp_mark = []
+    #for i in range(len(air_temp_vec)):
+    #    if air_temp_vec[i] > 0.0:
+    #        q_rain_vec[i] = prec_vec[i] * rho_water * c_water * air_temp_vec[i] / 3600.0
     #        pos_temp_mark.append(True)
     #    else:
     #        pos_temp_mark.append(False)
 
+    # Update q_rain_vec where air_temp is greater than 0.0
+    #q_rain_vec = [
+    #    prec * rho_water * c_water * air_temp / 3600.0
+    #    for prec, air_temp in zip(prec_vec, air_temp_vec) 
+    #    if air_temp > 0.0 
+    #]
+
+    # Initialize q_rain_vec with zeros
+    q_rain_vec = [
+        prec * rho_water * c_water * air_temp / 3600.0 if air_temp > 0.0 else 0.0
+        for prec, air_temp in zip(prec_vec, air_temp_vec)
+    ]
+
     # Display results
     #print(pos_temp_mark[:5])
-    printVec(q_rain_vec, column_name="Hourly melt rate from surface (m^3/h)")
+    printVec(q_rain_vec, column_name="Hourly q rain (m^3/h)")
+
+    #------------------------------------------------------------------------
 
     # Hourly rain volume
-    v_rain_vec = []
-    for i in range(len(air_temp_vec)):
-        v_rain_vec.append(prec_vec[i] * A_surf * rho_water * c_water * air_temp_vec[i] / (L_f * rho_snow)) # m^3/h
+    #v_rain_vec = []
+    #for i in range(len(air_temp_vec)):
+    #    v_rain_vec.append(prec_vec[i] * A_surf * rho_water * c_water * air_temp_vec[i] / (L_f * rho_snow)) # m^3/h
+    
+    v_rain_vec = [prec * A_surf * rho_water * c_water * air_temp / (L_f * rho_snow)
+                  for prec, air_temp in zip(prec_vec, air_temp_vec)]
     printVec(v_rain_vec, column_name="Hourly melt rate from rain (m^3/h)")
 
+    #------------------------------------------------------------------------
+
     # Calculate the surface melt rate where the temperature is greater than 0
-    SMR_temp_vec = [0.0] * len(air_vel_vec)
-    for i in range(len(air_temp_vec)):
-        if air_temp_vec[i] > 0.0:
-            SMR_temp_vec[i] = hrly_srf_total_vec[i] * rho_snow / A_surf # m^3/h
+    #SMR_temp_vec = [0.0] * len(air_vel_vec)
+    #for i in range(len(air_temp_vec)):
+    #    if air_temp_vec[i] > 0.0:
+    #        SMR_temp_vec[i] = hrly_srf_total_vec[i] * rho_snow / A_surf # m^3/h
+    
+    # Efficient version with list comprehension
+    SMR_temp_vec = [
+        hrly_srf_total*rho_snow/A_surf if air_temp > 0.0 else 0.0
+        for hrly_srf_total, air_temp in zip(hrly_srf_total_vec, air_temp_vec)
+    ]
     printVec(SMR_temp_vec, column_name="SMR due to T")
 
+    #------------------------------------------------------------------------
+
     # Surface melt rate due to rain
-    SMR_rain_vec = []
-    for i in range(len(v_rain_vec)):
-        SMR_rain_vec.append(v_rain_vec[i] * rho_snow / A_surf) # m^3/h
+    #SMR_rain_vec = []
+    #for i in range(len(v_rain_vec)):
+    #    SMR_rain_vec.append(v_rain_vec[i] * rho_snow / A_surf) # m^3/h
+
+    # Efficient version with list comprehension
+    SMR_rain_vec = [
+        v_rain * rho_snow / A_surf
+        for v_rain in v_rain_vec
+    ]
     printVec(SMR_rain_vec, column_name="SMR due to rain (m^3/h)")
 
-    SMR_total_vec = []
-    for i in range(len(SMR_temp_vec)):
-        SMR_total_vec.append(SMR_temp_vec[i] + SMR_rain_vec[i])
+    #------------------------------------------------------------------------
+
+
+    #SMR_total_vec = []
+    #for i in range(len(SMR_temp_vec)):
+    #    SMR_total_vec.append(SMR_temp_vec[i] + SMR_rain_vec[i])
+
+    # Efficient version with list comprehension
+    SMR_total_vec = [
+        SMR_temp + SMR_rain for SMR_temp, SMR_rain 
+        in zip(SMR_temp_vec, SMR_rain_vec) 
+    ]
     printVec(SMR_total_vec, column_name="Combined toal SMR (m^3/h)")
+
+    #------------------------------------------------------------------------
 
     # Cumulative sum of the SMR with rain together with temperature
     SMR_rainT_vec = cumsum(SMR_total_vec)
     printVec(SMR_rainT_vec, column_name="Rain and T cumulative (m^3/h)")
 
-    emp1_SMR_vec = []
-    for i in range(len(air_temp_vec)):
-        emp1_SMR_vec.append(-0.09 + 0.00014*glob_solir_vec[i] + 0.0575*air_temp_vec[i] + 
-                            0.0012*air_temp_vec[i]*air_vel_vec[i] - 0.18*air_temp_vec[i]*d_ins) # kg/m2/h
+    #------------------------------------------------------------------------
+
+    #emp1_SMR_vec = []
+    #for i in range(len(air_temp_vec)):
+    #    emp1_SMR_vec.append(-0.09 + 0.00014*glob_solir_vec[i] + 0.0575*air_temp_vec[i] + 
+    #                        0.0012*air_temp_vec[i]*air_vel_vec[i] - 0.18*air_temp_vec[i]*d_ins) # kg/m2/h
+
+    # Efficient version with list comprehension
+    emp1_SMR_vec = [
+        -0.09 + 0.00014*glob_solir + 0.0575*air_temp + 0.0012*air_temp*air_vel - 0.18*air_temp*d_ins
+        for glob_solir, air_temp, air_vel in zip(glob_solir_vec, air_temp_vec, air_vel_vec)
+    ]
     printVec(emp1_SMR_vec, column_name="Empirical 1")
+
+    #------------------------------------------------------------------------
 
     Psat_vec = []
     for i in range(len(air_temp_vec)):
@@ -421,9 +507,48 @@ def main():
     qi_vec = []
     for i in range(len(Tsi_vec)):
         qi_vec.append((Tsi_vec[i] - 0.0)*h_i) # W/m^2
-    printVec(qi_vec, column_name="Heat flux in (w/m^2)")
+    printVec(qi_vec, column_name="Heat flux in (W/m^2)")
 
+    # Heat flux out
+    qo_vec = []
+    for i in range(len(T_sol_air_vec)):
+        qo_vec.append((T_sol_air_vec[i] - Tso_vec[i]) * ho_vec[i]) # W/m^2
+    printVec(qo_vec, column_name="Heat flux put (W/m^2)")
+
+    v_pc_vec = []
+    for i in range(len(qi_vec)):
+        v_pc_vec.append(qi_vec[i]/(L_f * rho_snow)) # m^3/(m^2*s)
+    printVec(v_pc_vec, column_name="Speed of phase change (m^3/(m^2*s))")
+
+    v_pc_hourly_vec = []
+    for i in range(len(v_pc_vec)):
+        v_pc_hourly_vec.append(v_pc_vec[i] * 3600.0)  # m/h
+    printVec(v_pc_hourly_vec, column_name="Hourly speed of phase change (m^3/(m^2*h))")
+
+    # Calculate hourly melt rate from solar heat flux
+    #df_hfmr = pd.Series(np.where(df_air_temp > 0,  df_v_pc_hourly * rho_snow, 0.0))
+    hfmr_vec = [
+        v_pc_hourly * rho_snow if air_temp > 0 else 0.0
+        for air_temp, v_pc_hourly in zip(air_temp_vec, v_pc_hourly_vec)
+    ]
+    printVec(hfmr_vec, column_name="Hourly melt rate from solar heat flux")
+
+    hfmr_cumsum_vec = cumsum(hfmr_vec)
+    printVec(hfmr_cumsum_vec, column_name="Cumulative hourly melt rate from solar heat flux")
+
+    #rain_solar_hf_vec = []
+    #for i in range(len(qo_vec)):
+    #    rain_solar_hf_vec.append(q_rain_vec[i] + qo_vec[i]) # W/m^2
+    rain_solar_hf_vec = [q_rain + qo for q_rain, qo in zip(q_rain_vec, qo_vec)]
+    printVec(rain_solar_hf_vec, column_name="Heat flux from rain and sun (W/m^2)")
+
+    #wind_solar_rain_vec = []
+    #for i in range(len(rain_solar_hf_vec)):
+    #    wind_solar_rain_vec.append(rain_solar_hf_vec[i] / (T_sol_air_vec[i]-Tso_vec[i]))
+    wind_solar_rain_vec = [rain_solar_hf/(T_sol_air-Tso) for rain_solar_hf, T_sol_air, Tso in zip(rain_solar_hf_vec, T_sol_air_vec, Tso_vec)]
+    printVec(wind_solar_rain_vec, column_name="Heat flux from wind, solar and rain (W/m^2)")
 
 # End of main() section
+
 if __name__ == "__main__":
     main()
