@@ -175,7 +175,7 @@ def main():
         result = chardet.detect(rawdata.read(100000))
         encoding = result['encoding']
 
-    print(encoding)
+    print(f"Encoding type is: {encoding}.")
 
     # Create an empty list to store the data
     data = []
