@@ -1,7 +1,10 @@
 """
+Upload:
 >   git add snow.py
 >   git commit -m "Your commit message here"
 >   git push origin main
+Download:
+>   git pull origin main
 """
 
 import chardet
