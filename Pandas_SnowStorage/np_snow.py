@@ -121,8 +121,8 @@ def transient1D(t_o, h_o, d_ins, lam_i, D, dx=0.005, dt=10.0, h_i=99.75):
             b[-1] = (1.0 + 2.0*dFo + 2.0*dFo*dBio_i)
             d[-1] = T_n[-1] + 2.0*dFo*dBio_i*t_i
 
-            if k == 3500:   # ???
-                k = k       # ???
+            # if k == 3500:   # ???
+            #     k = k       # ???
 
             # Solve the tridiagonal system
             T_n = solve_tdma(a, b, c, d, nodes)
@@ -211,7 +211,7 @@ printNP(Tso_vec, name="Tso (Celsius)")
 ho_vec = np.where(air_vel_vec <= 5.0, 6.0 + 4.0 * air_vel_vec, 7.41 * (air_vel_vec**0.78))
 printNP(ho_vec, name="# Air velocity (with cond)")
 
-# More constants
+# More constants for transient 1D solver
 h_i = 99.75  # W/m^2*K
 c_wet = 2.59E03 # J/(kg*K)
 rho_dry = 100.0 # kg/m^3
