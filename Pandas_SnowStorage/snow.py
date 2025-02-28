@@ -304,7 +304,7 @@ def main():
     for row in data[:5]:
         print(row[9])   # row[9] - YEAR column
 
-    # Find the index where the first NaN value appears in the 'YEAR.1' column (assuming it's the 5th column, change if needed)
+    # Find the index where the first NaN value appears in the 'YEAR.1' column
     first_nan_index = None
     for index, row in enumerate(data):
         try:
