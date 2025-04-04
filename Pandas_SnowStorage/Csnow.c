@@ -423,11 +423,13 @@ NumericArray convert_to_int(char** string_array, int length) {
 }
 
 // Function to free a NumericArray
-void free_numeric_array(NumericArray* array) {
-    if (array) {
-        free(array->values);
-        free(array->is_valid);
-        array->length = 0;
+void free_numeric_array(NumericArray* arr) {
+    if (arr) {
+        free(arr->values);
+        free(arr->is_valid);
+        arr->values = NULL;
+        arr->is_valid = NULL;
+        arr->length = 0;
     }
 }
 
@@ -543,43 +545,125 @@ void debug_string_array(StringArray* arr, const char* name) {
     }
 }
 
+// Fast calculation with separate allocations
 NumericArray calculate_solar_air_temp_fast(const NumericArray* glob_solir_vec,
     const NumericArray* air_temp_vec,
     double alpha,
     double h,
-    double T_cor_fact) {
-    NumericArray result;
-    result.values = NULL;
-    result.is_valid = NULL;
-    result.length = 0;
+    double T_cor_fact) 
+{
+    NumericArray result = {NULL, NULL, 0};
 
-    // Validate inputs
+    // Input validation
     if (!glob_solir_vec || !air_temp_vec || 
-    glob_solir_vec->length != air_temp_vec->length) {
-    return result;
+        !glob_solir_vec->values || !air_temp_vec->values ||
+        !glob_solir_vec->is_valid || !air_temp_vec->is_valid ||
+        glob_solir_vec->length != air_temp_vec->length) {
+        return result;
     }
 
     const int length = glob_solir_vec->length;
 
-    // Single allocation for both values and validity flags
-    double* values = malloc(length * (sizeof(double) + sizeof(bool)));
-    if (!values) return result;
+    // Allocate memory
+    result.values = malloc(length * sizeof(double));
+    result.is_valid = malloc(length * sizeof(bool));
 
-    result.values = values;
-    result.is_valid = (bool*)(values + length);  // Place validity array after values
+    if (!result.values || !result.is_valid) {
+        free(result.values);
+        free(result.is_valid);
+        return result;
+    }
+
     result.length = length;
 
-    // Get raw pointers for direct access
-    const double* glob_solir = glob_solir_vec->values;
-    const double* air_temp = air_temp_vec->values;
-    const bool* valid1 = glob_solir_vec->is_valid;
-    const bool* valid2 = air_temp_vec->is_valid;
+    // Performance-critical loop
+    const double* restrict glob_solir = glob_solir_vec->values;
+    const double* restrict air_temp = air_temp_vec->values;
+    const bool* restrict valid1 = glob_solir_vec->is_valid;
+    const bool* restrict valid2 = air_temp_vec->is_valid;
 
-    // Perform the calculation
+    double* restrict out_values = result.values;
+    bool* restrict out_valid = result.is_valid;
+
     for (int i = 0; i < length; i++) {
-    const bool valid = valid1[i] && valid2[i];
-    result.is_valid[i] = valid;
-    result.values[i] = valid ? (alpha * glob_solir[i] / h + air_temp[i] - T_cor_fact) : 0.0;
+        const bool valid = valid1[i] && valid2[i];
+        out_valid[i] = valid;
+        out_values[i] = valid ? (alpha * glob_solir[i] / h + air_temp[i] - T_cor_fact) : 0.0;
+    }
+
+    return result;
+}
+
+NumericArray calculate_solar_air_temp_simple(const NumericArray* glob_solir_vec,
+    const NumericArray* air_temp_vec,
+    double alpha,
+    double h,
+    double T_cor_fact) 
+{
+    // Initialize empty result
+    NumericArray result = {NULL, NULL, 0};
+
+    // Basic validation
+    if (!glob_solir_vec || !air_temp_vec || 
+        glob_solir_vec->length != air_temp_vec->length) {
+        return result;
+    }
+
+    const int length = glob_solir_vec->length;
+
+    // Allocate memory
+    result.values = malloc(length * sizeof(double));
+    result.is_valid = malloc(length * sizeof(bool));
+    if (!result.values || !result.is_valid) {
+        free(result.values);
+        free(result.is_valid);
+        return result;
+    }
+    result.length = length;
+
+    // Simple calculation loop
+    for (int i = 0; i < length; i++) {
+        result.values[i] = alpha * glob_solir_vec->values[i] / h 
+        + air_temp_vec->values[i] 
+        - T_cor_fact;
+        result.is_valid[i] = true; // Assuming all inputs are valid
+    }
+
+    return result;
+}
+
+NumericArray calculate_surface_power(const NumericArray* T_sol_air_vec,
+    double A_surf,
+    double lam_i,
+    double d_ins)     
+{
+    // Initialize empty result
+    NumericArray result = {NULL, NULL, 0};
+
+    // Basic validation
+    if (!T_sol_air_vec || !T_sol_air_vec->values) {
+        return result;
+    }
+
+    const int length = T_sol_air_vec->length;
+
+    // Allocate memory
+    result.values = malloc(length * sizeof(double));
+    result.is_valid = malloc(length * sizeof(bool));
+    if (!result.values || !result.is_valid) {
+    free(result.values);
+    free(result.is_valid);
+    return result;
+    }
+    result.length = length;
+
+    // Pre-calculate the constant factor
+    const double heat_transfer_coeff = A_surf * lam_i / d_ins;
+
+    // Simple calculation loop
+    for (int i = 0; i < length; i++) {
+    result.values[i] = heat_transfer_coeff * T_sol_air_vec->values[i];
+    result.is_valid[i] = T_sol_air_vec->is_valid[i]; // Inherit validity
     }
 
     return result;
@@ -670,14 +754,14 @@ int main() {
     NumericArray RH_perc_vec = convert_string_array_to_double(&RH_perc_vec_raw);
     print_numeric_array(&RH_perc_vec, "Relative Humidity Percipitation (m/h)");
 
-    /////////////////////////////////////////////////////////////////////////////////////
+    //------------------------------------------------------------------------------------
 
     // Constants
     double h = 22.7; // Heat transfer coefficient at the external surface
     double alpha = 0.8; // Solar light absorptivity
     double T_cor_fact = 4.0; // °C //Correction factor for horizontal surface
 
-    NumericArray T_sol_air_vec = calculate_solar_air_temp_fast(
+    NumericArray T_sol_air_vec = calculate_solar_air_temp_simple(
         &glob_solir_vec, 
         &air_temp_vec,
         alpha, h, T_cor_fact
@@ -685,8 +769,17 @@ int main() {
 
     print_numeric_array(&T_sol_air_vec, "Solar-Air (Celsius)");
 
-    // Free when done
-    free_numeric_array(&T_sol_air_vec);
+    //------------------------------------------------------------------------------------
+   
+    double d_ins = 0.1; // m        // Insulation layer thickness
+    double lam_i = 0.32; // W/(mK)  // Thermal conductivity for the insulating material
+    double A_surf = 210.0; // m^2   // The surface area (m2) of the pile of snow
+
+    NumericArray Q_surf_vec = calculate_surface_power(&T_sol_air_vec, A_surf, lam_i, d_ins);
+    print_numeric_array(&Q_surf_vec, "Surface power (W)");
+
+    //------------------------------------------------------------------------------------
+
 
     // Cleanup
     free_string_array(&air_temp_raw);
@@ -699,6 +792,10 @@ int main() {
     free_numeric_array(&glob_solir_vec);
     free_string_array(&RH_perc_vec_raw);
     free_numeric_array(&RH_perc_vec);
+
+    free_numeric_array(&T_sol_air_vec);
+    free_numeric_array(&Q_surf_vec);
+
 
     free_csv_data(data);
 
