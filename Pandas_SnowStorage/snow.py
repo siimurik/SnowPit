@@ -539,7 +539,7 @@ def main():
     # Extract the amount of RH precipitation column from the data
     RH_perc_vec_raw = [row[17] for row in rdata]
     RH_perc_vec = convert_to_type(RH_perc_vec_raw, dtype=float)
-    printVec(prec_vec, column_name="Relative Humidity Percipitation (m/h)")
+    printVec(RH_perc_vec, column_name="Relative Humidity Precipitation (m/h)")
 
     # Water steam pressure
     Pw_vec = []
