@@ -543,6 +543,48 @@ void debug_string_array(StringArray* arr, const char* name) {
     }
 }
 
+NumericArray calculate_solar_air_temp_fast(const NumericArray* glob_solir_vec,
+    const NumericArray* air_temp_vec,
+    double alpha,
+    double h,
+    double T_cor_fact) {
+    NumericArray result;
+    result.values = NULL;
+    result.is_valid = NULL;
+    result.length = 0;
+
+    // Validate inputs
+    if (!glob_solir_vec || !air_temp_vec || 
+    glob_solir_vec->length != air_temp_vec->length) {
+    return result;
+    }
+
+    const int length = glob_solir_vec->length;
+
+    // Single allocation for both values and validity flags
+    double* values = malloc(length * (sizeof(double) + sizeof(bool)));
+    if (!values) return result;
+
+    result.values = values;
+    result.is_valid = (bool*)(values + length);  // Place validity array after values
+    result.length = length;
+
+    // Get raw pointers for direct access
+    const double* glob_solir = glob_solir_vec->values;
+    const double* air_temp = air_temp_vec->values;
+    const bool* valid1 = glob_solir_vec->is_valid;
+    const bool* valid2 = air_temp_vec->is_valid;
+
+    // Perform the calculation
+    for (int i = 0; i < length; i++) {
+    const bool valid = valid1[i] && valid2[i];
+    result.is_valid[i] = valid;
+    result.values[i] = valid ? (alpha * glob_solir[i] / h + air_temp[i] - T_cor_fact) : 0.0;
+    }
+
+    return result;
+}
+
 /////////////////////////////////////////////////////////////////////////////////////////////
 /////////////////////////////////////////////////////////////////////////////////////////////
 /////////////////////////////////////////////////////////////////////////////////////////////
@@ -627,6 +669,24 @@ int main() {
     StringArray RH_perc_vec_raw = extract_column_range(data, 5, period_start, period_end);
     NumericArray RH_perc_vec = convert_string_array_to_double(&RH_perc_vec_raw);
     print_numeric_array(&RH_perc_vec, "Relative Humidity Percipitation (m/h)");
+
+    /////////////////////////////////////////////////////////////////////////////////////
+
+    // Constants
+    double h = 22.7; // Heat transfer coefficient at the external surface
+    double alpha = 0.8; // Solar light absorptivity
+    double T_cor_fact = 4.0; // °C //Correction factor for horizontal surface
+
+    NumericArray T_sol_air_vec = calculate_solar_air_temp_fast(
+        &glob_solir_vec, 
+        &air_temp_vec,
+        alpha, h, T_cor_fact
+    );
+
+    print_numeric_array(&T_sol_air_vec, "Solar-Air (Celsius)");
+
+    // Free when done
+    free_numeric_array(&T_sol_air_vec);
 
     // Cleanup
     free_string_array(&air_temp_raw);
