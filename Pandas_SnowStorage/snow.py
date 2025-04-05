@@ -172,6 +172,110 @@ def Psat_WV(T_K):
     
     return x
 
+def solve_tdma(a, b, c, d, n):
+    """
+    Solves a tridiagonal system of equations using the Thomas algorithm.
+
+    Parameters:
+        a (list): Lower diagonal of the matrix.
+        b (list): Main diagonal of the matrix.
+        c (list): Upper diagonal of the matrix.
+        d (list): Right-hand side vector.
+        n (int): Size of the system.
+
+    Returns:
+        list: Solution vector.
+    """
+    c_prime = [0.0] * n
+    d_prime = [0.0] * n
+    x = [0.0] * n
+
+    # Forward sweep
+    c_prime[0] = c[0] / b[0]
+    d_prime[0] = d[0] / b[0]
+
+    for i in range(1, n):
+        c_prime[i] = c[i] / (b[i] - a[i] * c_prime[i - 1])
+        d_prime[i] = (d[i] - a[i] * d_prime[i - 1]) / (b[i] - a[i] * c_prime[i - 1])
+
+    # Back substitution
+    x[-1] = d_prime[-1]
+
+    for i in range(n - 2, -1, -1):
+        x[i] = d_prime[i] - c_prime[i] * x[i + 1]
+
+    return x
+
+
+def transient1D(t_o, h_o, d_ins, lam_i, D, dx=0.005, dt=10.0, h_i=99.75):
+    """
+    Temperature distribution, transient 1D, BC 3d, implicit method.
+
+    Parameters:
+        t_o (list): Outer temperature for each hour.
+        h_o (list): Outer heat transfer coefficient for each hour.
+        d_ins (float): Insulation thickness, m.
+        lam_i (float): Thermal conductivity.
+        D (float): Thermal diffusivity.
+        dx (float): Cell size, m.
+        dt (float): Time interval, s.
+        h_i (float): Inner heat transfer coefficient, W/m2K.
+
+    Returns:
+        list: 2D list of temperature distribution for each node and hour.
+    """
+    t_i = 0.0  # Inner temperature, C
+    delta_db = d_ins  # Layer thickness, m
+    k_db = lam_i  # Thermal conductivity
+    a_db = D  # Thermal diffusivity
+    n_el = int(delta_db / dx)  # Number of numerical elements
+    nr_hour = len(t_o)  # Number of hours
+    nodes = n_el + 1  # Number of nodes
+
+    # Initialize temperature distribution
+    T_n = [0.0] * nodes
+    T_nh = [[0.0 for _ in range(nr_hour)] for _ in range(nodes)]  # 2D list for results
+
+    # Initialize arrays for Tri-Diagonal Matrix Algorithm (TDMA)
+    a = [0.0] * nodes
+    b = [0.0] * nodes
+    c = [0.0] * nodes
+    d = [0.0] * nodes
+
+    nh = int(3600 / dt)  # Number of time intervals in one hour
+
+    # Main loop over hours
+    for h in range(nr_hour):
+        dFo = a_db * dt / dx**2
+        dBio_i = h_i * dx / k_db
+        dBio_o = h_o[h] * dx / k_db
+
+        # Time steps within one hour
+        for _ in range(nh):
+            # Set up the tridiagonal system
+            b[0] = (1.0 + 2.0 * dFo + 2.0 * dFo * dBio_o)
+            c[0] = -2.0 * dFo
+            d[0] = T_n[0] + 2.0 * dFo * dBio_o * t_o[h]
+
+            for j in range(1, nodes - 1):
+                a[j] = -dFo
+                b[j] = (1.0 + 2.0 * dFo)
+                c[j] = -dFo
+                d[j] = T_n[j]
+
+            a[-1] = -2.0 * dFo
+            b[-1] = (1.0 + 2.0 * dFo + 2.0 * dFo * dBio_i)
+            d[-1] = T_n[-1] + 2.0 * dFo * dBio_i * t_i
+
+            # Solve the tridiagonal system
+            T_n = solve_tdma(a, b, c, d, nodes)
+
+        # Store the result for this hour
+        for j in range(nodes):
+            T_nh[j][h] = T_n[j]
+
+    return T_nh
+
 def main():
     # Detect the encoding of the file
     with open('Snow_Storage_Data.csv', 'rb') as rawdata:
@@ -200,7 +304,7 @@ def main():
     for row in data[:5]:
         print(row[9])   # row[9] - YEAR column
 
-    # Find the index where the first NaN value appears in the 'YEAR.1' column (assuming it's the 5th column, change if needed)
+    # Find the index where the first NaN value appears in the 'YEAR.1' column
     first_nan_index = None
     for index, row in enumerate(data):
         try:
@@ -435,7 +539,7 @@ def main():
     # Extract the amount of RH precipitation column from the data
     RH_perc_vec_raw = [row[17] for row in rdata]
     RH_perc_vec = convert_to_type(RH_perc_vec_raw, dtype=float)
-    printVec(prec_vec, column_name="Relative Humidity Percipitation (m/h)")
+    printVec(RH_perc_vec, column_name="Relative Humidity Precipitation (m/h)")
 
     # Water steam pressure
     Pw_vec = []
@@ -505,8 +609,35 @@ def main():
     ]
     printVec(ho_vec, column_name="# Air velocity (with cond)")
 
-    # Heat transfer coefficient at the internal surface:
-    h_i = 99.75 # W/m^2*K
+    # More constants for transient 1D solver
+    h_i = 99.75  # W/m^2*K
+    c_wet = 2.59E03 # J/(kg*K)
+    rho_dry = 100.0 # kg/m^3
+    moist_cont = 50.0 # %
+    rho_wet = rho_dry + moist_cont/100.0*1000 # kg/m^3
+    c_dry = 0.99E03 # J/(kg*K)
+    c_water = 4.19E03 # J/(kg * K)
+
+    c_wet = (1.0 - moist_cont/100.0)*c_dry + moist_cont/100.0*c_water
+    print(f"Specific heat capacity (wet): {c_wet/1000.0:.4} kJ/(kg*K).")
+
+    D = lam_i/(c_wet * rho_wet) # m^2/s
+    print(f"Thermal diffusivity of the insulating material is {D:.4e} m^2/s.\n")
+
+    # Snow outer and inner layer temperatures
+    t_o = T_sol_air_vec
+    h_o = ho_vec
+
+    t_o_range = transient1D(t_o, h_o, d_ins, lam_i, D, dx=0.005, dt=10.0, h_i=h_i)
+    # Print the temperature distribution for the first and last 5 hours
+    for h in range(5):
+        print(f"Hour {h}: Inner Temp = {t_o_range[-1][h]:.4e}, Outer Temp = {t_o_range[0][h]:.4e}")
+    print("...")
+    for h in range(-5, 0):
+        print(f"Hour {len(ho_vec)-h-1}: Inner Temp = {t_o_range[-1][h]:.4e}, Outer Temp = {t_o_range[0][h]:.4e}")
+    #printVec(t_o_range[0, :], name="Outer temperature of snow (°C)")  
+    #printVec(t_o_range[-1, :], name="Internal temperature of snow (°C)")
+
     # Heat flux in
     qi_vec = []
     for i in range(len(Tsi_vec)):
