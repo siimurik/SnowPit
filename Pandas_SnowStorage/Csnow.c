@@ -1,3 +1,9 @@
+/*
+    gcc -Wall -Wextra -Werror Csnow.c -o lumi -lm -fopenmp
+    gcc -fopenmp -O3 -march=native Csnow.c -o lumi -lm
+*/
+
+#include <omp.h> 
 #include <math.h>  // Required for exp() and pow() functions
 #include <ctype.h>
 #include <stdio.h>
@@ -229,6 +235,168 @@ CSVData* read_csv_with_encoding(const char* file_path, int* columns_to_keep, int
     return csv_data;
 }
 
+/*
+CSVData* read_csv_with_encoding_parallel(const char* file_path, int* columns_to_keep, int num_cols_to_keep) {
+    const char* encoding = detect_encoding(file_path);
+    printf("\nAssuming encoding: %s\n", encoding);
+
+    FILE* file = fopen(file_path, "r");
+    if (!file) {
+        perror("Error opening file");
+        return NULL;
+    }
+
+    // First pass to count rows and columns (this remains sequential)
+    int rows = 0;
+    int max_columns = 0;
+    char line[100000];
+
+    while (fgets(line, sizeof(line), file)) {
+        rows++;
+        int cols_in_line = count_columns(line);
+        if (cols_in_line > max_columns) max_columns = cols_in_line;
+    }
+
+    // Handle column selection
+    int* cols_kept = NULL;
+    int cols_kept_count = 0;
+
+    if (columns_to_keep == NULL || num_cols_to_keep == 0) {
+        cols_kept_count = max_columns;
+        cols_kept = malloc(cols_kept_count * sizeof(int));
+        for (int i = 0; i < cols_kept_count; i++) {
+            cols_kept[i] = i;
+        }
+    } else {
+        cols_kept_count = num_cols_to_keep;
+        cols_kept = malloc(cols_kept_count * sizeof(int));
+        memcpy(cols_kept, columns_to_keep, cols_kept_count * sizeof(int));
+    }
+
+    // Allocate main structure
+    CSVData* csv_data = calloc(1, sizeof(CSVData));
+    if (!csv_data) {
+        fclose(file);
+        free(cols_kept);
+        return NULL;
+    }
+
+    csv_data->rows = rows;
+    csv_data->cols = max_columns;
+    csv_data->cols_to_keep = cols_kept;
+    csv_data->cols_kept = cols_kept_count;
+    csv_data->data = calloc(rows, sizeof(char**));
+    if (!csv_data->data) {
+        free(cols_kept);
+        free(csv_data);
+        fclose(file);
+        return NULL;
+    }
+
+    // Pre-allocate all row pointers to simplify parallel access
+    for (int i = 0; i < rows; i++) {
+        csv_data->data[i] = calloc(cols_kept_count, sizeof(char*));
+        if (!csv_data->data[i]) {
+            // Cleanup previously allocated rows
+            for (int j = 0; j < i; j++) {
+                free(csv_data->data[j]);
+            }
+            free(csv_data->data);
+            free(cols_kept);
+            free(csv_data);
+            fclose(file);
+            return NULL;
+        }
+    }
+
+    // Read all lines into a buffer for parallel processing
+    rewind(file);
+    char** line_buffer = calloc(rows, sizeof(char*));
+    if (!line_buffer) {
+        for (int i = 0; i < rows; i++) {
+            free(csv_data->data[i]);
+        }
+        free(csv_data->data);
+        free(cols_kept);
+        free(csv_data);
+        fclose(file);
+        return NULL;
+    }
+
+    // Read all lines sequentially first
+    for (int i = 0; i < rows; i++) {
+        line_buffer[i] = calloc(100000, sizeof(char));
+        if (!line_buffer[i] || !fgets(line_buffer[i], 100000, file)) {
+            // Clean up on error
+            for (int j = 0; j <= i; j++) {
+                free(line_buffer[j]);
+            }
+            free(line_buffer);
+            for (int j = 0; j < rows; j++) {
+                free(csv_data->data[j]);
+            }
+            free(csv_data->data);
+            free(cols_kept);
+            free(csv_data);
+            fclose(file);
+            return NULL;
+        }
+    }
+
+    // Process lines in parallel
+    bool error_occurred = false;
+    #pragma omp parallel
+    {
+        #pragma omp for
+        for (int i = 0; i < rows; i++) {
+            if (error_occurred) continue; // Skip if an error has occurred
+
+            char** all_columns = parse_csv_line(line_buffer[i], max_columns);
+            if (!all_columns) {
+                #pragma omp critical
+                {
+                    error_occurred = true;
+                }
+                continue;
+            }
+
+            // Process columns for this row
+            for (int j = 0; j < cols_kept_count; j++) {
+                int col_idx = cols_kept[j];
+                if (col_idx < max_columns && all_columns[col_idx]) {
+                    csv_data->data[i][j] = strdup(all_columns[col_idx]);
+                } else {
+                    csv_data->data[i][j] = strdup(" ");
+                }
+            }
+
+            free_csv_row(all_columns, max_columns);
+        }
+    }
+
+    // Clean up the line buffer
+    for (int i = 0; i < rows; i++) {
+        free(line_buffer[i]);
+    }
+    free(line_buffer);
+
+    fclose(file);
+
+    // Check if an error occurred during parallel processing
+    if (error_occurred) {
+        for (int i = 0; i < rows; i++) {
+            free_csv_row(csv_data->data[i], cols_kept_count);
+        }
+        free(csv_data->data);
+        free(cols_kept);
+        free(csv_data);
+        return NULL;
+    }
+
+    return csv_data;
+}
+*/
+
 void free_csv_data(CSVData* data) {
     if (!data) return;
     for (int i = 0; i < data->rows; i++) {
@@ -282,6 +450,40 @@ int find_index(CSVData* data, int column_index, const char* value) {
     }
     return -1;
 }
+
+/*
+int find_index_parallel(CSVData* data, int column_index, const char* value) {
+    if (!data || column_index < 0 || column_index >= data->cols_kept) {
+        return -1;
+    }
+    
+    int found_index = -1;
+    
+    #pragma omp parallel
+    {
+        #pragma omp for
+        for (int i = 0; i < data->rows; i++) {
+            // Skip if already found by another thread
+            if (found_index != -1) continue;
+            
+            if (strcmp(data->data[i][column_index], value) == 0) {
+                #pragma omp critical
+                {
+                    // Only update if this is the first occurrence found
+                    if (found_index == -1 || i < found_index) {
+                        found_index = i;
+                    }
+                }
+                
+                // Optional: Break out of the loop
+                #pragma omp cancel for
+            }
+        }
+    }
+    
+    return found_index;
+}
+*/
 
 // Function to extract a column as an array of strings
 char** extract_column(CSVData* data, int column_index) {
@@ -401,6 +603,49 @@ NumericArray convert_string_array_to_double(StringArray* string_arr) {
     
     return result;
 }
+
+/*
+NumericArray convert_string_array_to_double_parallel(StringArray* string_arr) {
+    NumericArray result;
+    result.values = NULL;
+    result.is_valid = NULL;
+    result.length = 0;
+    
+    if (!string_arr || string_arr->length == 0) {
+        return result;
+    }
+    
+    result.values = malloc(string_arr->length * sizeof(double));
+    result.is_valid = malloc(string_arr->length * sizeof(bool));
+    if (!result.values || !result.is_valid) {
+        free(result.values);
+        free(result.is_valid);
+        result.length = 0;
+        return result;
+    }
+    
+    result.length = string_arr->length;
+    
+    #pragma omp parallel for
+    for (int i = 0; i < string_arr->length; i++) {
+        char* cleaned = trim_whitespace(string_arr->strings[i]);
+        char* endptr;
+        result.values[i] = strtod(cleaned, &endptr);
+        
+        // Check if conversion was successful
+        result.is_valid[i] = (*cleaned != '\0' && *endptr == '\0');
+        if (!result.is_valid[i]) {
+            #pragma omp critical
+            {
+                fprintf(stderr, "Warning: Could not convert '%s' to double\n", string_arr->strings[i]);
+            }
+            result.values[i] = 0.0; // Default value for invalid
+        }
+    }
+    
+    return result;
+}
+*/
 
 // Function to convert string array to int array
 NumericArray convert_to_int(char** string_array, int length) {
@@ -1129,33 +1374,33 @@ NumericArray calculate_emp1_SMR(const NumericArray* air_temp_vec,
     }
     result.length = length;
 
-    double T_K, RH, vel, sol, temp, Psat, Pw, w;
+    //double T_K, RH, vel, sol, temp, Psat, Pw, w;
     // Calculate all intermediate steps in one pass
     for (int i = 0; i < length; i++) {
-        T_K  = air_temp_vec->values[i] + 273.15;  // Convert to Kelvin
-        RH   = RH_perc_vec->values[i];
-        vel  = wind_speed_vec->values[i];
-        sol  = glob_solir_vec->values[i];
-        temp = air_temp_vec->values[i];
+        const double T_K  = air_temp_vec->values[i] + 273.15;  // Convert to Kelvin
+        const double RH   = RH_perc_vec->values[i];
+        const double vel  = wind_speed_vec->values[i];
+        const double sol  = glob_solir_vec->values[i];
+        const double temp = air_temp_vec->values[i];
 
         // 1. Saturation vapor pressure (hPa)
-        Psat = Psat_WV(T_K) / 10.0;
+        const double Psat = Psat_WV(T_K) / 10.0;
 
         // 2. Water vapor pressure (kPa)
-        Pw = (Psat * RH) / 100.0;
+        const double Pw = (Psat * RH) / 100.0;
 
         // 3. Absolute humidity (kPa)
-        w = (2.16679 * Pw * 1000.0) / T_K;
+        const double w = (2.16679 * Pw * 1000.0) / T_K;
 
         // 4. Empirical SMR2 (kg/m²/h)
         result.values[i] = -0.97 - 0.097*(d_ins*100.0) + 0.164*vel + 
                                 0.00175*sol + 0.102*temp + 0.192*w;
 
         // Check all inputs are valid
-        result.is_valid[i] = air_temp_vec->is_valid[i] && 
-        wind_speed_vec->is_valid[i] &&
-        glob_solir_vec->is_valid[i] &&
-        RH_perc_vec->is_valid[i];
+        result.is_valid[i] =  air_temp_vec->is_valid[i] && 
+                            wind_speed_vec->is_valid[i] &&
+                            glob_solir_vec->is_valid[i] &&
+                            RH_perc_vec->is_valid[i];
     }
 
     return result;
@@ -1379,6 +1624,106 @@ Matrix transient1D(const Vector* t_o, const Vector* h_o,
     return T_nh;
 }
 
+
+// Add to transient1D() function:
+Matrix transient1D_parallel(const Vector* t_o, const Vector* h_o, 
+    double d_ins, double lam_i, double D,
+    double dx, double dt, double h_i) 
+{
+    Matrix T_nh = {NULL, 0, 0};
+
+    // Validate inputs
+    if (!t_o || !h_o || t_o->length != h_o->length) {
+        fprintf(stderr, "Error: Invalid temperature or h_o vectors\n");
+        return T_nh;
+    }
+
+    const double t_i = 0.0;  // Inner temperature (°C)
+    const int n_el = (int)(d_ins / dx);  // Number of elements
+    const int nodes = n_el + 1;          // Number of nodes
+    const int nr_hour = t_o->length;     // Number of hours
+    const int nh = (int)(3600.0 / dt);   // Time steps per hour
+
+    // Allocate result matrix
+    T_nh.data = malloc(nodes * sizeof(double*));
+    for (int i = 0; i < nodes; i++) {
+        T_nh.data[i] = malloc(nr_hour * sizeof(double));
+    }
+    T_nh.rows = nodes;
+    T_nh.cols = nr_hour;
+
+    // Initialize temperature distribution (shared)
+    Vector T_n_initial = {calloc(nodes, sizeof(double)), nodes};
+
+    // Main loop over hours - PARALLELIZED
+    #pragma omp parallel
+    {
+        // Each thread gets private workspace
+        Vector T_n_local = {malloc(nodes * sizeof(double)), nodes};
+        Vector a = {malloc(nodes * sizeof(double)), nodes};
+        Vector b = {malloc(nodes * sizeof(double)), nodes};
+        Vector c = {malloc(nodes * sizeof(double)), nodes};
+        Vector d = {malloc(nodes * sizeof(double)), nodes};
+
+        #pragma omp for schedule(dynamic)
+        for (int h = 0; h < nr_hour; h++) 
+        {
+            // Start from initial condition each hour
+            memcpy(T_n_local.values, T_n_initial.values, nodes * sizeof(double));
+
+            const double dFo = D * dt / (dx * dx);
+            const double dBio_i = h_i * dx / lam_i;
+            const double dBio_o = h_o->values[h] * dx / lam_i;
+
+            // Time steps within one hour
+            for (int step = 0; step < nh; step++) 
+            {
+                // Set up tridiagonal system
+                b.values[0] = 1.0 + 2.0 * dFo + 2.0 * dFo * dBio_o;
+                c.values[0] = -2.0 * dFo;
+                d.values[0] = T_n_local.values[0] + 2.0 * dFo * dBio_o * t_o->values[h];
+
+                for (int j = 1; j < nodes-1; j++) 
+                {
+                    a.values[j] = -dFo;
+                    b.values[j] = 1.0 + 2.0 * dFo;
+                    c.values[j] = -dFo;
+                    d.values[j] = T_n_local.values[j];
+                }
+
+                a.values[nodes-1] = -2.0 * dFo;
+                b.values[nodes-1] = 1.0 + 2.0 * dFo + 2.0 * dFo * dBio_i;
+                d.values[nodes-1] = T_n_local.values[nodes-1] + 2.0 * dFo * dBio_i * t_i;
+
+                // Solve system
+                Vector solution = solve_tdma(&a, &b, &c, &d);
+                memcpy(T_n_local.values, solution.values, nodes * sizeof(double));
+                free(solution.values);
+            }
+
+            // Store results for this hour
+            #pragma omp critical
+            {
+                for (int j = 0; j < nodes; j++) {
+                    T_nh.data[j][h] = T_n_local.values[j];
+                }
+            }
+        }
+
+        // Free thread-local memory
+        free(T_n_local.values);
+        free(a.values);
+        free(b.values);
+        free(c.values);
+        free(d.values);
+    }
+
+    // Cleanup shared memory
+    free(T_n_initial.values);
+
+    return T_nh;
+}
+
 void free_matrix(Matrix* mat) {
     for (int i = 0; i < mat->rows; i++) {
         free(mat->data[i]);
@@ -1400,6 +1745,8 @@ int main() {
     int num_cols = sizeof(columns_to_keep)/sizeof(columns_to_keep[0]);
     
     CSVData* data = read_csv_with_encoding("Snow_Storage_Data.csv", columns_to_keep, num_cols);
+    //CSVData* data = read_csv_with_encoding_parallel("Snow_Storage_Data.csv", 
+    //                          columns_to_keep, num_cols);     // Does not offer a speed-up 
     if (!data) {
         printf("Failed to read CSV\n");
         return 1;
@@ -1592,7 +1939,8 @@ int main() {
     }
 
     // Run simulation
-    Matrix t_o_range = transient1D(&t_o, &h_o, d_ins, lam_i, D, 0.005, 10.0, h_i);
+    //Matrix t_o_range = transient1D(&t_o, &h_o, d_ins, lam_i, D, 0.005, 10.0, h_i);
+    Matrix t_o_range = transient1D_parallel(&t_o, &h_o, d_ins, lam_i, D, 0.005, 10.0, h_i);
 
     printf("\nRows: %d\nCols: %d\n", t_o_range.rows, t_o_range.cols);
     // Print some results
