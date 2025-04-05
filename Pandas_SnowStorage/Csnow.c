@@ -798,6 +798,100 @@ NumericArray calculate_rain_heat_flux(const NumericArray* prec_vec,
     return result;
 }
 
+// RHF - rain heat flux
+NumericArray calculate_hrly_RHF(const NumericArray* prec_vec,
+    const NumericArray* air_temp_vec,
+    double A_surf,
+    double rho_water,
+    double c_water,
+    double L_f,
+    double rho_snow)    
+{
+    // Initialize empty result
+    NumericArray result = {NULL, NULL, 0};
+
+    // Validate inputs
+    if (!prec_vec || !air_temp_vec || 
+        !prec_vec->values || !air_temp_vec->values ||
+        prec_vec->length != air_temp_vec->length) {
+        fprintf(stderr, "Error: Invalid input arrays\n");
+        return result;
+    }
+
+    const int length = prec_vec->length;
+
+    // Allocate memory
+    result.values = malloc(length * sizeof(double));
+    result.is_valid = malloc(length * sizeof(bool));
+    if (!result.values || !result.is_valid) {
+        free(result.values);
+        free(result.is_valid);
+        fprintf(stderr, "Error: Memory allocation failed\n");
+    return result;
+    }
+    result.length = length;
+
+    // Pre-calculate the constant factor
+    const double hrly_rain_coeff = A_surf * rho_water * c_water/ (L_f * rho_snow);
+
+    // Simple calculation loop
+    for (int i = 0; i < length; i++) {
+        result.values[i] = hrly_rain_coeff * prec_vec->values[i] * air_temp_vec->values[i];
+        result.is_valid[i] = air_temp_vec->is_valid[i] && prec_vec->is_valid[i]; //true 
+    }
+
+    return result;
+}
+
+NumericArray calculate_SMR_temp(const NumericArray* hrly_SMR_latent_vec,
+    const NumericArray* air_temp_vec,
+    double rho_snow,
+    double A_surf) 
+{
+    // Initialize empty result
+    NumericArray result = {NULL, NULL, 0};
+
+    // Validate inputs
+    if (!hrly_SMR_latent_vec || !air_temp_vec || 
+        !hrly_SMR_latent_vec->values || !air_temp_vec->values ||
+        hrly_SMR_latent_vec->length != air_temp_vec->length) {
+        fprintf(stderr, "Error: Invalid input arrays\n");
+        return result;
+    }
+
+    const int length = hrly_SMR_latent_vec->length;
+
+    // Allocate memory
+    result.values = malloc(length * sizeof(double));
+    result.is_valid = malloc(length * sizeof(bool));
+    if (!result.values || !result.is_valid) {
+        free(result.values);
+        free(result.is_valid);
+        fprintf(stderr, "Error: Memory allocation failed\n");
+        return result;
+    }
+    result.length = length;
+
+    // Pre-calculate the constant factor
+    const double temp_coeff = rho_snow / A_surf;
+
+    // Calculate heat flux
+    for (int i = 0; i < length; i++) {
+        if (air_temp_vec->is_valid[i] && hrly_SMR_latent_vec->is_valid[i] && 
+            air_temp_vec->values[i] > 0.0) {
+            // Only calculate for positive temperatures
+            result.values[i] = hrly_SMR_latent_vec->values[i] * temp_coeff;
+            result.is_valid[i] = true;
+        } else {
+            // Set to 0.0 for invalid or non-positive temperatures
+            result.values[i] = 0.0;
+            result.is_valid[i] = air_temp_vec->is_valid[i] && hrly_SMR_latent_vec->is_valid[i];
+        }
+    }
+
+    return result;
+}
+
 /////////////////////////////////////////////////////////////////////////////////////////////
 /////////////////////////////////////////////////////////////////////////////////////////////
 /////////////////////////////////////////////////////////////////////////////////////////////
@@ -928,7 +1022,16 @@ int main() {
     NumericArray q_rain_vec = calculate_rain_heat_flux(&prec_vec, &air_temp_vec, rho_water, c_water);
     print_numeric_array(&q_rain_vec, "Heat flux due to rain (W/m^2)");
 
+    //------------------------------------------------------------------------------------
 
+    NumericArray hrly_q_rain_vec = calculate_hrly_RHF(&prec_vec, &air_temp_vec,
+                                    A_surf, rho_water, c_water, L_f, rho_snow);
+    print_numeric_array(&hrly_q_rain_vec, "Hourly heat flux due to rain (m^3/h)");
+    //------------------------------------------------------------------------------------
+    
+    NumericArray SMR_temp_vec = calculate_SMR_temp(&hrly_SMR_latent_vec, &air_temp_vec,
+                                                    rho_snow, A_surf);
+    print_numeric_array(&SMR_temp_vec, "Latent SMR with T condition [kg/(m^2*h)]");
 
     //------------------------------------------------------------------------------------
 
@@ -949,6 +1052,8 @@ int main() {
     free_numeric_array(&SMR_latent_vec);
     free_numeric_array(&hrly_SMR_latent_vec);
     free_numeric_array(&q_rain_vec);
+    free_numeric_array(&hrly_q_rain_vec);
+    free_numeric_array(&SMR_temp_vec);
 
     free_csv_data(data);
 
