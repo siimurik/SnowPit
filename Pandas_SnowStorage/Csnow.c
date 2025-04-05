@@ -608,6 +608,7 @@ NumericArray calculate_solar_air_temp_simple(const NumericArray* glob_solir_vec,
     if (!glob_solir_vec || !air_temp_vec ||             // NULL pointer check
         glob_solir_vec->length != air_temp_vec->length) // Vector length check
     {  
+        fprintf(stderr, "Error: Invalid input array\n");
         return result;
     }
 
@@ -619,6 +620,7 @@ NumericArray calculate_solar_air_temp_simple(const NumericArray* glob_solir_vec,
     if (!result.values || !result.is_valid) {
         free(result.values);
         free(result.is_valid);
+        fprintf(stderr, "Error: Memory allocation failed\n");
         return result;
     }
     result.length = length;
@@ -656,6 +658,7 @@ NumericArray calculate_surface_power(const NumericArray* T_sol_air_vec,
     if (!result.values || !result.is_valid) {
         free(result.values);
         free(result.is_valid);
+        fprintf(stderr, "Error: Memory allocation failed\n");
     return result;
     }
     result.length = length;
@@ -693,6 +696,7 @@ NumericArray calculate_surf_meltrate(const NumericArray* Q_surf_vec,
     if (!result.values || !result.is_valid) {
         free(result.values);
         free(result.is_valid);
+        fprintf(stderr, "Error: Memory allocation failed\n");
     return result;
     }
     result.length = length;
@@ -707,6 +711,90 @@ NumericArray calculate_surf_meltrate(const NumericArray* Q_surf_vec,
     }
 
     return result;
+}
+
+NumericArray calculate_hrly_SMR(const NumericArray* SMR_latent_vec)    
+{
+    // Initialize empty result
+    NumericArray result = {NULL, NULL, 0};
+
+    // Basic validation
+    if (!SMR_latent_vec || !SMR_latent_vec->values) {
+        fprintf(stderr, "Error: Invalid input array\n");
+        return result;
+    }
+
+    const int length = SMR_latent_vec->length;
+
+    // Allocate memory
+    result.values = malloc(length * sizeof(double));
+    result.is_valid = malloc(length * sizeof(bool));
+    if (!result.values || !result.is_valid) {
+        free(result.values);
+        free(result.is_valid);
+        fprintf(stderr, "Error: Memory allocation failed\n");
+    return result;
+    }
+    result.length = length;
+
+    // Pre-calculate the constant factor
+    const double hrly_coeff = 3600.0;
+
+    // Simple calculation loop
+    for (int i = 0; i < length; i++) {
+        result.values[i] = hrly_coeff * SMR_latent_vec->values[i];
+        result.is_valid[i] = SMR_latent_vec->is_valid[i]; // Inherit validity
+    }
+
+    return result;
+}
+
+NumericArray calculate_rain_heat_flux(const NumericArray* prec_vec,
+    const NumericArray* air_temp_vec,
+    double rho_water,
+    double c_water) {
+// Initialize empty result
+NumericArray result = {NULL, NULL, 0};
+
+// Validate inputs
+if (!prec_vec || !air_temp_vec || 
+!prec_vec->values || !air_temp_vec->values ||
+prec_vec->length != air_temp_vec->length) {
+fprintf(stderr, "Error: Invalid input arrays\n");
+return result;
+}
+
+const int length = prec_vec->length;
+
+// Allocate memory
+result.values = malloc(length * sizeof(double));
+result.is_valid = malloc(length * sizeof(bool));
+if (!result.values || !result.is_valid) {
+free(result.values);
+free(result.is_valid);
+fprintf(stderr, "Error: Memory allocation failed\n");
+return result;
+}
+result.length = length;
+
+// Pre-calculate the constant factor
+const double heat_flux_coeff = (rho_water * c_water) / 3600.0;
+
+// Calculate heat flux
+for (int i = 0; i < length; i++) {
+if (air_temp_vec->is_valid[i] && prec_vec->is_valid[i] && 
+air_temp_vec->values[i] > 0.0) {
+// Only calculate for positive temperatures
+result.values[i] = prec_vec->values[i] * heat_flux_coeff * air_temp_vec->values[i];
+result.is_valid[i] = true;
+} else {
+// Set to 0.0 for invalid or non-positive temperatures
+result.values[i] = 0.0;
+result.is_valid[i] = air_temp_vec->is_valid[i] && prec_vec->is_valid[i];
+}
+}
+
+return result;
 }
 
 /////////////////////////////////////////////////////////////////////////////////////////////
@@ -823,11 +911,25 @@ int main() {
     double L_f = 333.4E03;   // J/kg; latent heat of fusion
     double rho_snow = 411.0; // kg/m^3; density of snow
 
-    NumericArray f_srf_melt_vec = calculate_surf_meltrate(&Q_surf_vec, L_f, rho_snow);
-    print_numeric_array(&f_srf_melt_vec, "Surface melt rate (m^3/s)");
+    NumericArray SMR_latent_vec = calculate_surf_meltrate(&Q_surf_vec, L_f, rho_snow);
+    print_numeric_array(&SMR_latent_vec, "Surface melt rate due to latent heat (m^3/s)");
 
     //------------------------------------------------------------------------------------
 
+    NumericArray hrly_SMR_latent_vec = calculate_hrly_SMR(&SMR_latent_vec);
+    print_numeric_array(&hrly_SMR_latent_vec, "Hourly SMR due to latent heat (m^3/h)");
+
+    //------------------------------------------------------------------------------------
+
+    double rho_water = 1000.0;  // # kg/m3 
+    double c_water   = 4.19E03; // J/(kg*K)
+
+    NumericArray q_rain_vec = calculate_rain_heat_flux(&prec_vec, &air_temp_vec, rho_water, c_water);
+    print_numeric_array(&q_rain_vec, "Heat flux due to rain (W/m^2)");
+
+
+
+    //------------------------------------------------------------------------------------
 
     // Cleanup
     free_string_array(&air_temp_raw);
@@ -843,7 +945,9 @@ int main() {
 
     free_numeric_array(&T_sol_air_vec);
     free_numeric_array(&Q_surf_vec);
-    free_numeric_array(&f_srf_melt_vec);
+    free_numeric_array(&SMR_latent_vec);
+    free_numeric_array(&hrly_SMR_latent_vec);
+    free_numeric_array(&q_rain_vec);
 
     free_csv_data(data);
 
