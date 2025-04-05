@@ -1,9 +1,9 @@
 #include <math.h>  // Required for exp() and pow() functions
+#include <ctype.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <stdbool.h>
-#include <ctype.h>
 
 typedef struct {
     char*** data;
@@ -25,6 +25,17 @@ typedef struct {
     char** strings;  // Array of strings
     int length;      // Number of strings
 } StringArray;
+
+typedef struct {
+    double* values;
+    int length;
+} Vector;
+
+typedef struct {
+    double** data;
+    int rows;
+    int cols;
+} Matrix;
 
 // Function prototypes
 //const char* detect_encoding(const char* file_path);
@@ -1249,6 +1260,135 @@ NumericArray calculate_ho_vec(const NumericArray* air_vel_vec) {
     return result;
 }
 
+
+Vector solve_tdma(const Vector* a, const Vector* b, const Vector* c, const Vector* d) {
+    Vector x = {NULL, b->length};
+    if (a->length != b->length || b->length != c->length || c->length != d->length) {
+        fprintf(stderr, "Error: TDMA vectors must be same length\n");
+        return x;
+    }
+
+    const int n = b->length;
+    x.values = malloc(n * sizeof(double));
+    double* c_prime = malloc(n * sizeof(double));
+    double* d_prime = malloc(n * sizeof(double));
+
+    // Forward sweep
+    c_prime[0] = c->values[0] / b->values[0];
+    d_prime[0] = d->values[0] / b->values[0];
+
+    for (int i = 1; i < n; i++) {
+        double denom = b->values[i] - a->values[i] * c_prime[i-1];
+        c_prime[i] = c->values[i] / denom;
+        d_prime[i] = (d->values[i] - a->values[i] * d_prime[i-1]) / denom;
+    }
+
+    // Back substitution
+    x.values[n-1] = d_prime[n-1];
+    for (int i = n-2; i >= 0; i--) {
+        x.values[i] = d_prime[i] - c_prime[i] * x.values[i+1];
+    }
+
+    free(c_prime);
+    free(d_prime);
+    return x;
+}
+
+Matrix transient1D(const Vector* t_o, const Vector* h_o, 
+                  double d_ins, double lam_i, double D,
+                  double dx, double dt, double h_i) {
+    Matrix T_nh = {NULL, 0, 0};
+    
+    // Validate inputs
+    if (!t_o || !h_o || t_o->length != h_o->length) {
+        fprintf(stderr, "Error: Invalid temperature or h_o vectors\n");
+        return T_nh;
+    }
+
+    const double t_i = 0.0;  // Inner temperature (°C)
+    const int n_el = (int)(d_ins / dx);  // Number of elements
+    const int nodes = n_el + 1;          // Number of nodes
+    const int nr_hour = t_o->length;     // Number of hours
+    const int nh = (int)(3600.0 / dt);   // Time steps per hour
+
+    // Allocate result matrix
+    T_nh.data = malloc(nodes * sizeof(double*));
+    for (int i = 0; i < nodes; i++) {
+        T_nh.data[i] = malloc(nr_hour * sizeof(double));
+    }
+    T_nh.rows = nodes;
+    T_nh.cols = nr_hour;
+
+    // Initialize temperature distribution
+    Vector T_n = {malloc(nodes * sizeof(double)), nodes};
+    for (int i = 0; i < nodes; i++) {
+        T_n.values[i] = 0.0;
+    }
+
+    // TDMA vectors
+    Vector a = {malloc(nodes * sizeof(double)), nodes};
+    Vector b = {malloc(nodes * sizeof(double)), nodes};
+    Vector c = {malloc(nodes * sizeof(double)), nodes};
+    Vector d = {malloc(nodes * sizeof(double)), nodes};
+
+    // Main loop over hours
+    for (int h = 0; h < nr_hour; h++) {
+        const double dFo = D * dt / (dx * dx);
+        const double dBio_i = h_i * dx / lam_i;
+        const double dBio_o = h_o->values[h] * dx / lam_i;
+
+        // Time steps within one hour
+        for (int step = 0; step < nh; step++) {
+            // Set up tridiagonal system
+            b.values[0] = 1.0 + 2.0 * dFo + 2.0 * dFo * dBio_o;
+            c.values[0] = -2.0 * dFo;
+            d.values[0] = T_n.values[0] + 2.0 * dFo * dBio_o * t_o->values[h];
+
+            for (int j = 1; j < nodes-1; j++) {
+                a.values[j] = -dFo;
+                b.values[j] = 1.0 + 2.0 * dFo;
+                c.values[j] = -dFo;
+                d.values[j] = T_n.values[j];
+            }
+
+            a.values[nodes-1] = -2.0 * dFo;
+            b.values[nodes-1] = 1.0 + 2.0 * dFo + 2.0 * dFo * dBio_i;
+            d.values[nodes-1] = T_n.values[nodes-1] + 2.0 * dFo * dBio_i * t_i;
+
+            // Solve system
+            Vector solution = solve_tdma(&a, &b, &c, &d);
+            for (int j = 0; j < nodes; j++) {
+                T_n.values[j] = solution.values[j];
+            }
+            free(solution.values);
+        }
+
+        // Store results for this hour
+        for (int j = 0; j < nodes; j++) {
+            T_nh.data[j][h] = T_n.values[j];
+        }
+    }
+
+    // Cleanup
+    free(a.values);
+    free(b.values);
+    free(c.values);
+    free(d.values);
+    free(T_n.values);
+
+    return T_nh;
+}
+
+void free_matrix(Matrix* mat) {
+    for (int i = 0; i < mat->rows; i++) {
+        free(mat->data[i]);
+    }
+    free(mat->data);
+    mat->rows = 0;
+    mat->cols = 0;
+}
+
+
 /////////////////////////////////////////////////////////////////////////////////////////////
 /////////////////////////////////////////////////////////////////////////////////////////////
 /////////////////////////////////////////////////////////////////////////////////////////////
@@ -1433,7 +1573,44 @@ int main() {
     print_numeric_array(&ho_vec, "Air velocity (with cond)");
 
     //------------------------------------------------------------------------------------
+    
+    // Example usage with your constants
+    //double lam_i = 0.32;       // W/(m·K)
+    //double d_ins = 0.1;        // m
+    double h_i = 99.75;        // W/m²K
+    double c_wet = 2.59e3;     // J/(kg·K)
+    double rho_wet = 600.0;    // kg/m³ (calculated from your formula)
+    double D = lam_i / (c_wet * rho_wet);  // m²/s
 
+    // Create sample input vectors (replace with your actual data)
+    int n = ho_vec.length;
+    Vector t_o = {malloc(n * sizeof(double)), n};
+    Vector h_o = {malloc(n * sizeof(double)), n};
+    for (int i = 0; i < n; i++) {
+        t_o.values[i] = T_sol_air_vec.values[i];
+        h_o.values[i] = ho_vec.values[i];
+    }
+
+    // Run simulation
+    Matrix t_o_range = transient1D(&t_o, &h_o, d_ins, lam_i, D, 0.005, 10.0, h_i);
+
+    printf("\nRows: %d\nCols: %d\n", t_o_range.rows, t_o_range.cols);
+    // Print some results
+    printf("Temperature distribution:\n");
+    for (int h = 0; h < 5; h++){
+        printf("Hour %d: Inner Temp = %.4e, Outer Temp = %.4e\n", 
+            h+1, t_o_range.data[t_o_range.rows-1][h], t_o_range.data[0][h]);
+    }
+    printf("\n...\n");
+    for (int h = t_o_range.cols-5; h < t_o_range.cols; h++){
+        printf("Hour %d: Inner Temp = %.4e, Outer Temp = %.4e\n", 
+            h+1, t_o_range.data[t_o_range.rows-1][h], t_o_range.data[0][h]);
+    }
+
+    // Cleanup
+    free(t_o.values);
+    free(h_o.values);
+    free_matrix(&t_o_range);
 
     // Cleanup
     free_string_array(&air_temp_raw);
