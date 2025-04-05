@@ -44,14 +44,6 @@ typedef struct {
     int cols;
 } Matrix;
 
-// Function prototypes
-//const char* detect_encoding(const char* file_path);
-//int count_columns(const char* line);
-//char** parse_csv_line(const char* line, int max_columns);
-//void free_csv_row(char** row, int cols);
-//void free_csv_data(CSVData* data);
-//CSVData* read_csv_with_encoding(const char* file_path, int* columns_to_keep, int num_cols_to_keep);
-
 const char* detect_encoding(const char* file_path) {
     (void)file_path;  // Explicitly mark as unused
     return "ISO-8859-1";
