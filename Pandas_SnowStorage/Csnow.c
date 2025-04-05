@@ -752,49 +752,50 @@ NumericArray calculate_hrly_SMR(const NumericArray* SMR_latent_vec)
 NumericArray calculate_rain_heat_flux(const NumericArray* prec_vec,
     const NumericArray* air_temp_vec,
     double rho_water,
-    double c_water) {
-// Initialize empty result
-NumericArray result = {NULL, NULL, 0};
+    double c_water) 
+{
+    // Initialize empty result
+    NumericArray result = {NULL, NULL, 0};
 
-// Validate inputs
-if (!prec_vec || !air_temp_vec || 
-!prec_vec->values || !air_temp_vec->values ||
-prec_vec->length != air_temp_vec->length) {
-fprintf(stderr, "Error: Invalid input arrays\n");
-return result;
-}
+    // Validate inputs
+    if (!prec_vec || !air_temp_vec || 
+        !prec_vec->values || !air_temp_vec->values ||
+        prec_vec->length != air_temp_vec->length) {
+        fprintf(stderr, "Error: Invalid input arrays\n");
+        return result;
+    }
 
-const int length = prec_vec->length;
+    const int length = prec_vec->length;
 
-// Allocate memory
-result.values = malloc(length * sizeof(double));
-result.is_valid = malloc(length * sizeof(bool));
-if (!result.values || !result.is_valid) {
-free(result.values);
-free(result.is_valid);
-fprintf(stderr, "Error: Memory allocation failed\n");
-return result;
-}
-result.length = length;
+    // Allocate memory
+    result.values = malloc(length * sizeof(double));
+    result.is_valid = malloc(length * sizeof(bool));
+    if (!result.values || !result.is_valid) {
+        free(result.values);
+        free(result.is_valid);
+        fprintf(stderr, "Error: Memory allocation failed\n");
+        return result;
+    }
+    result.length = length;
 
-// Pre-calculate the constant factor
-const double heat_flux_coeff = (rho_water * c_water) / 3600.0;
+    // Pre-calculate the constant factor
+    const double heat_flux_coeff = (rho_water * c_water) / 3600.0;
 
-// Calculate heat flux
-for (int i = 0; i < length; i++) {
-if (air_temp_vec->is_valid[i] && prec_vec->is_valid[i] && 
-air_temp_vec->values[i] > 0.0) {
-// Only calculate for positive temperatures
-result.values[i] = prec_vec->values[i] * heat_flux_coeff * air_temp_vec->values[i];
-result.is_valid[i] = true;
-} else {
-// Set to 0.0 for invalid or non-positive temperatures
-result.values[i] = 0.0;
-result.is_valid[i] = air_temp_vec->is_valid[i] && prec_vec->is_valid[i];
-}
-}
+    // Calculate heat flux
+    for (int i = 0; i < length; i++) {
+        if (air_temp_vec->is_valid[i] && prec_vec->is_valid[i] && 
+            air_temp_vec->values[i] > 0.0) {
+            // Only calculate for positive temperatures
+            result.values[i] = prec_vec->values[i] * heat_flux_coeff * air_temp_vec->values[i];
+            result.is_valid[i] = true;
+        } else {
+            // Set to 0.0 for invalid or non-positive temperatures
+            result.values[i] = 0.0;
+            result.is_valid[i] = air_temp_vec->is_valid[i] && prec_vec->is_valid[i];
+        }
+    }
 
-return result;
+    return result;
 }
 
 /////////////////////////////////////////////////////////////////////////////////////////////
