@@ -1,3 +1,4 @@
+#include <math.h>  // Required for exp() and pow() functions
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -1006,6 +1007,248 @@ NumericArray cumsum(const NumericArray* input) {
     return result;
 }
 
+NumericArray calculate_emp2_SMR(const NumericArray* glob_solir_vec,
+    const NumericArray* air_temp_vec,
+    const NumericArray* wind_speed_vec,
+    double d_ins) 
+{
+    // Initialize empty result
+    NumericArray result = {NULL, NULL, 0};
+
+    // Validate inputs
+    if (!glob_solir_vec || !air_temp_vec || !wind_speed_vec ||
+        !glob_solir_vec->values || !air_temp_vec->values || !wind_speed_vec->values ||
+        glob_solir_vec->length != air_temp_vec->length || 
+        glob_solir_vec->length != wind_speed_vec->length) {
+        fprintf(stderr, "Error: Invalid input arrays\n");
+        return result;
+    }
+
+    const int length = glob_solir_vec->length;
+
+    // Allocate memory
+    result.values = malloc(length * sizeof(double));
+    result.is_valid = malloc(length * sizeof(bool));
+    if (!result.values || !result.is_valid) {
+        free(result.values);
+        free(result.is_valid);
+        fprintf(stderr, "Error: Memory allocation failed\n");
+        return result;
+    }
+    result.length = length;
+    
+    double g, t, v;
+    // Calculate empirical SMR
+    for (int i = 0; i < length; i++) {
+        g = glob_solir_vec->values[i];
+        t = air_temp_vec->values[i];
+        v = wind_speed_vec->values[i];
+        result.values[i] = -0.09 + 0.00014*g + 0.0575*t + 
+                            0.0012*t*v - 0.18*t*d_ins;
+        result.is_valid[i] = glob_solir_vec->is_valid[i] && 
+                             air_temp_vec->is_valid[i] && 
+                             wind_speed_vec->is_valid[i];    // Check all inputs are valid
+    }
+
+    return result;
+}
+
+
+double Psat_WV(double T_K) {
+    /* 
+     * Water vapour saturation pressure using IAPWS formulation
+     * W. Wagner and A. Pruß (2002)
+     * Returns saturation vapor pressure in hPa
+     */
+    const double Tc = 647.096;   // Critical temperature (K)
+    const double Pc = 220640.0;  // Critical pressure (hPa)
+    
+    // Constants from IAPWS formulation
+    const double C1 = -7.85951783;
+    const double C2 = 1.84408259;
+    const double C3 = -11.7866497;
+    const double C4 = 22.6807411;
+    const double C5 = -15.9618719;
+    const double C6 = 1.80122502;
+    
+    const double teta = 1.0 - T_K / Tc;
+    
+    // Calculate the exponent term
+    const double x = (Tc / T_K) * 
+                   (C1 * teta + 
+                    C2 * pow(teta, 1.5) + 
+                    C3 * pow(teta, 3.0) + 
+                    C4 * pow(teta, 3.5) + 
+                    C5 * pow(teta, 4.0) + 
+                    C6 * pow(teta, 7.5));
+    
+    return exp(x) * Pc;
+}
+
+NumericArray calculate_emp1_SMR(const NumericArray* air_temp_vec,
+    const NumericArray* wind_speed_vec,
+    const NumericArray* glob_solir_vec,
+    const NumericArray* RH_perc_vec,
+    double d_ins) 
+{
+    // Initialize empty result
+    NumericArray result = {NULL, NULL, 0};
+
+    // Validate all inputs
+    if (!air_temp_vec || !wind_speed_vec || !glob_solir_vec || !RH_perc_vec ||
+        !air_temp_vec->values || !wind_speed_vec->values || 
+        !glob_solir_vec->values || !RH_perc_vec->values ||
+        air_temp_vec->length != wind_speed_vec->length ||
+        air_temp_vec->length != glob_solir_vec->length ||
+        air_temp_vec->length != RH_perc_vec->length) {
+        fprintf(stderr, "Error: Invalid input arrays\n");
+        return result;
+    }
+
+    const int length = air_temp_vec->length;
+
+    // Allocate memory for final result
+    result.values = malloc(length * sizeof(double));
+    result.is_valid = malloc(length * sizeof(bool));
+    if (!result.values || !result.is_valid) {
+        free(result.values);
+        free(result.is_valid);
+        fprintf(stderr, "Error: Memory allocation failed\n");
+        return result;
+    }
+    result.length = length;
+
+    double T_K, RH, vel, sol, temp, Psat, Pw, w;
+    // Calculate all intermediate steps in one pass
+    for (int i = 0; i < length; i++) {
+        T_K  = air_temp_vec->values[i] + 273.15;  // Convert to Kelvin
+        RH   = RH_perc_vec->values[i];
+        vel  = wind_speed_vec->values[i];
+        sol  = glob_solir_vec->values[i];
+        temp = air_temp_vec->values[i];
+
+        // 1. Saturation vapor pressure (hPa)
+        Psat = Psat_WV(T_K) / 10.0;
+
+        // 2. Water vapor pressure (kPa)
+        Pw = (Psat * RH) / 100.0;
+
+        // 3. Absolute humidity (kPa)
+        w = (2.16679 * Pw * 1000.0) / T_K;
+
+        // 4. Empirical SMR2 (kg/m²/h)
+        result.values[i] = -0.97 - 0.097*(d_ins*100.0) + 0.164*vel + 
+                                0.00175*sol + 0.102*temp + 0.192*w;
+
+        // Check all inputs are valid
+        result.is_valid[i] = air_temp_vec->is_valid[i] && 
+        wind_speed_vec->is_valid[i] &&
+        glob_solir_vec->is_valid[i] &&
+        RH_perc_vec->is_valid[i];
+    }
+
+    return result;
+}
+
+
+NumericArray calculate_emp_pos_cumsum(const NumericArray* emp2_SMR_vec,
+    const NumericArray* air_temp_vec) 
+{
+    // Initialize empty result
+    NumericArray result = {NULL, NULL, 0};
+
+    // Validate inputs
+    if (!emp2_SMR_vec || !air_temp_vec || 
+        !emp2_SMR_vec->values || !air_temp_vec->values ||
+        emp2_SMR_vec->length != air_temp_vec->length) {
+        fprintf(stderr, "Error: Invalid input arrays\n");
+        return result;
+    }
+
+    const int length = emp2_SMR_vec->length;
+
+    // Allocate memory for both filtered and cumulative results
+    NumericArray filtered = {NULL, NULL, 0};
+    filtered.values = malloc(length * sizeof(double));
+    filtered.is_valid = malloc(length * sizeof(bool));
+    filtered.length = length;
+
+    if (!filtered.values || !filtered.is_valid) {
+        free(filtered.values);
+        free(filtered.is_valid);
+        fprintf(stderr, "Error: Memory allocation failed\n");
+        return result;
+    }
+
+    double smr, temp;
+    // 1. Apply positive condition filter
+    for (int i = 0; i < length; i++) {
+        filtered.is_valid[i] = emp2_SMR_vec->is_valid[i] && air_temp_vec->is_valid[i];
+
+        if (filtered.is_valid[i]) {
+            smr = emp2_SMR_vec->values[i];
+            temp = air_temp_vec->values[i];
+            // condition ? value_if_true : value_if_false;
+            filtered.values[i] = (smr < 0.0 || temp < 0.0) ? 0.0 : smr;
+        } else {
+            filtered.values[i] = 0.0;
+        }
+    }
+
+    // 2. Calculate cumulative sum
+    result = cumsum(&filtered);
+
+    // Clean up temporary filtered array
+    free(filtered.values);
+    free(filtered.is_valid);
+
+    return result;
+}
+
+NumericArray calculate_ho_vec(const NumericArray* air_vel_vec) {
+    // Initialize empty result
+    NumericArray result = {NULL, NULL, 0};
+
+    // Validate input
+    if (!air_vel_vec || !air_vel_vec->values) {
+        fprintf(stderr, "Error: Invalid input array\n");
+        return result;
+    }
+
+    const int length = air_vel_vec->length;
+
+    // Allocate memory
+    result.values = malloc(length * sizeof(double));
+    result.is_valid = malloc(length * sizeof(bool));
+    if (!result.values || !result.is_valid) {
+        free(result.values);
+        free(result.is_valid);
+        fprintf(stderr, "Error: Memory allocation failed\n");
+        return result;
+    }
+    result.length = length;
+
+    // Calculate ho values
+    for (int i = 0; i < length; i++) {
+        result.is_valid[i] = air_vel_vec->is_valid[i];
+        
+        if (result.is_valid[i]) {
+            const double vel = air_vel_vec->values[i];
+            
+            // Conditional calculation matching Python logic
+            if (vel <= 5.0) {
+                result.values[i] = 6.0 + 4.0 * vel;
+            } else {
+                result.values[i] = 7.41 * pow(vel, 0.78);
+            }
+        } else {
+            result.values[i] = 0.0;  // Default for invalid entries
+        }
+    }
+
+    return result;
+}
+
 /////////////////////////////////////////////////////////////////////////////////////////////
 /////////////////////////////////////////////////////////////////////////////////////////////
 /////////////////////////////////////////////////////////////////////////////////////////////
@@ -1050,7 +1293,7 @@ int main() {
     print_data_range(data, period_start, period_end, "Period Data");
 
     // Get air temperature data (index 7)
-    // 5, 6,  7, 12, 15, 17
+    // 5, 6,  7 , 12, 15, 17
     // 0, 1, [2],  3, 4,  5
     int air_temp_col = 2;
     StringArray air_temp_raw = extract_column_range(data, air_temp_col, period_start, period_end);
@@ -1060,22 +1303,22 @@ int main() {
     print_numeric_array(&air_temp_vec, "Air temperature (Celsius)");
     
     // Get wind speed data (index 15)
-    // 5, 6, 7, 12, 15, 17
+    // 5, 6, 7, 12,  15, 17
     // 0, 1, 2,  3, [4],  5
     StringArray wind_speed_raw = extract_column_range(data, 4, period_start, period_end);
     NumericArray wind_speed_vec = convert_string_array_to_double(&wind_speed_raw);
     print_numeric_array(&wind_speed_vec, "Wind speed (km/h)");
 
     // Get precipitation data (index 5)
-    //  5, 6, 7, 12, 15, 17
-    // [0], 1, 2,  3, 4,  5
+    //  5 , 6, 7, 12, 15, 17
+    // [0], 1, 2,  3,  4,  5
     StringArray prec_raw = extract_column_range(data, 0, period_start, period_end);
     NumericArray prec_vec = convert_string_array_to_double(&prec_raw);
     print_numeric_array(&prec_vec, "Precipitation (m/h)");
 
     // Get relative humidity data (index 12)
-    // 5, 6, 7, 12, 15, 17
-    // 0, 1, 2, [3], 4, 5
+    // 5, 6, 7,  12, 15, 17
+    // 0, 1, 2, [3], 4,  5
     StringArray glob_solir_vec_raw = extract_column_range(data, 3, period_start, period_end);
     // Debug output to see what we're working with
     //debug_string_array(&glob_solir_vec_raw, "Global solar irradiance (W/m2)");
@@ -1085,8 +1328,8 @@ int main() {
     print_numeric_array(&glob_solir_vec, "Global solar irradiance (W/m2)");
 
     // Extract the amount of RH precipitation column from the data (index 17)
-    // 5, 6, 7, 12, 15, 17
-    // 0, 1, 2,  3, 4, [5]
+    // 5, 6, 7, 12, 15,  17
+    // 0, 1, 2,  3,  4, [5]
     StringArray RH_perc_vec_raw = extract_column_range(data, 5, period_start, period_end);
     NumericArray RH_perc_vec = convert_string_array_to_double(&RH_perc_vec_raw);
     print_numeric_array(&RH_perc_vec, "Relative Humidity Percipitation (m/h)");
@@ -1160,9 +1403,37 @@ int main() {
     //------------------------------------------------------------------------------------
     
     NumericArray SMR_rainT_vec = cumsum(&SMR_total_vec);
-    print_numeric_array(&SMR_rainT_vec, "Rain and T cumulative (m³/h)");
+    print_numeric_array(&SMR_rainT_vec, "Rain and T cumulative (m^3/h)");
     
     //------------------------------------------------------------------------------------
+    
+    NumericArray emp2_SMR_vec = calculate_emp2_SMR(&glob_solir_vec, &air_temp_vec,
+                                                    &wind_speed_vec, d_ins);
+    print_numeric_array(&emp2_SMR_vec, "Empirical (32) [kg/(m^2*h)");
+    
+    //------------------------------------------------------------------------------------
+
+    NumericArray emp1_SMR_vec = calculate_emp1_SMR(&air_temp_vec, &wind_speed_vec, 
+                                            &glob_solir_vec, &RH_perc_vec, d_ins);
+    print_numeric_array(&emp1_SMR_vec, "Empirical (31) [kg/(m^2*h)");
+
+    //------------------------------------------------------------------------------------
+    
+    NumericArray emp2_pos = calculate_emp_pos_cumsum(&emp2_SMR_vec, &air_temp_vec);
+    print_numeric_array(&emp2_pos, "Empirical (32) cumulative pos. values [kg/(m^2*h)");
+
+    //------------------------------------------------------------------------------------
+    
+    NumericArray emp1_pos = calculate_emp_pos_cumsum(&emp1_SMR_vec, &air_temp_vec);
+    print_numeric_array(&emp1_pos, "Empirical (31) cumulative pos. values [kg/(m^2*h)");
+
+    //------------------------------------------------------------------------------------
+
+    NumericArray ho_vec = calculate_ho_vec(&wind_speed_vec);
+    print_numeric_array(&ho_vec, "Air velocity (with cond)");
+
+    //------------------------------------------------------------------------------------
+
 
     // Cleanup
     free_string_array(&air_temp_raw);
@@ -1186,6 +1457,11 @@ int main() {
     free_numeric_array(&SMR_rain_vec);
     free_numeric_array(&SMR_total_vec);
     free_numeric_array(&SMR_rainT_vec);
+    free_numeric_array(&emp2_SMR_vec);
+    free_numeric_array(&emp1_SMR_vec);
+    free_numeric_array(&emp2_pos);
+    free_numeric_array(&emp1_pos);
+    free_numeric_array(&ho_vec);
 
     free_csv_data(data);
 
