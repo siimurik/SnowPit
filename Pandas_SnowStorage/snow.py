@@ -507,7 +507,7 @@ def main():
         SMR_temp + SMR_rain for SMR_temp, SMR_rain 
         in zip(SMR_temp_vec, SMR_rain_vec) 
     ]
-    printVec(SMR_total_vec, column_name="Combined toal SMR (m^3/h)")
+    printVec(SMR_total_vec, column_name="Combined total SMR (m^3/h)")
 
     #------------------------------------------------------------------------
 

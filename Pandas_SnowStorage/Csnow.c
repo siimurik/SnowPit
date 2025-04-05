@@ -904,17 +904,17 @@ NumericArray calculate_SMR_temp(const NumericArray* hrly_SMR_latent_vec,
     NumericArray result = {NULL, NULL, 0};
 
     // Validate inputs
-    if (!hrly_SMR_latent_vec || !air_temp_vec || 
-        !hrly_SMR_latent_vec->values || !air_temp_vec->values ||
-        hrly_SMR_latent_vec->length != air_temp_vec->length) {
-        fprintf(stderr, "Error: Invalid input arrays\n");
-        return result;
-    }
+    //if (!hrly_SMR_latent_vec || !air_temp_vec || 
+    //    !hrly_SMR_latent_vec->values || !air_temp_vec->values ||
+    //    hrly_SMR_latent_vec->length != air_temp_vec->length) {
+    //    fprintf(stderr, "Error: Invalid input arrays\n");
+    //    return result;
+    //}
 
     const int length = hrly_SMR_latent_vec->length;
 
     // Allocate memory
-    result.values = malloc(length * sizeof(double));
+    result.values = calloc(length, sizeof(double));
     result.is_valid = malloc(length * sizeof(bool));
     if (!result.values || !result.is_valid) {
         free(result.values);
@@ -929,6 +929,13 @@ NumericArray calculate_SMR_temp(const NumericArray* hrly_SMR_latent_vec,
 
     // Calculate heat flux
     for (int i = 0; i < length; i++) {
+        result.is_valid[i] = hrly_SMR_latent_vec->is_valid[i];
+
+        if (air_temp_vec->values[i] > 0.0) {
+            result.values[i] = hrly_SMR_latent_vec->values[i] * temp_coeff;
+        }
+        
+        /*
         if (air_temp_vec->is_valid[i] && hrly_SMR_latent_vec->is_valid[i] && 
             air_temp_vec->values[i] > 0.0) {
             // Only calculate for positive temperatures
@@ -939,6 +946,7 @@ NumericArray calculate_SMR_temp(const NumericArray* hrly_SMR_latent_vec,
             result.values[i] = 0.0;
             result.is_valid[i] = air_temp_vec->is_valid[i] && hrly_SMR_latent_vec->is_valid[i];
         }
+        */
     }
 
     return result;
@@ -1235,7 +1243,14 @@ NumericArray calculate_emp_pos_cumsum(const NumericArray* emp2_SMR_vec,
     // 1. Apply positive condition filter
     for (int i = 0; i < length; i++) {
         filtered.is_valid[i] = emp2_SMR_vec->is_valid[i] && air_temp_vec->is_valid[i];
-
+        smr = emp2_SMR_vec->values[i];
+        temp = air_temp_vec->values[i];
+        if (smr < 0.0 || temp < 0.0) {
+            filtered.values[i] = 0.0;
+        } else {
+            filtered.values[i] = smr;
+        }
+        /*
         if (filtered.is_valid[i]) {
             smr = emp2_SMR_vec->values[i];
             temp = air_temp_vec->values[i];
@@ -1244,6 +1259,7 @@ NumericArray calculate_emp_pos_cumsum(const NumericArray* emp2_SMR_vec,
         } else {
             filtered.values[i] = 0.0;
         }
+        */
     }
 
     // 2. Calculate cumulative sum
@@ -1282,19 +1298,14 @@ NumericArray calculate_ho_vec(const NumericArray* air_vel_vec) {
     // Calculate ho values
     for (int i = 0; i < length; i++) {
         result.is_valid[i] = air_vel_vec->is_valid[i];
-        
-        if (result.is_valid[i]) {
-            const double vel = air_vel_vec->values[i];
-            
-            // Conditional calculation matching Python logic
-            if (vel <= 5.0) {
-                result.values[i] = 6.0 + 4.0 * vel;
-            } else {
-                result.values[i] = 7.41 * pow(vel, 0.78);
-            }
+        const double vel = air_vel_vec->values[i];
+        // Conditional calculation
+        if (vel <= 5.0) {
+            result.values[i] = 6.0 + 4.0 * vel;
         } else {
-            result.values[i] = 0.0;  // Default for invalid entries
+            result.values[i] = 7.41 * pow(vel, 0.78);
         }
+
     }
 
     return result;
@@ -1802,7 +1813,7 @@ int main() {
     //------------------------------------------------------------------------------------
     
     NumericArray SMR_total_vec = calculate_total_SMR(&SMR_temp_vec, &SMR_rain_vec);
-    print_numeric_array(&SMR_total_vec, "Combined toal SMR [kg/(m^2*h)]");
+    print_numeric_array(&SMR_total_vec, "Combined total SMR [kg/(m^2*h)]");
 
     //------------------------------------------------------------------------------------
     
