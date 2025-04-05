@@ -1,4 +1,8 @@
 /*
+    gcc -O3 -march=native Csnow.c -o lumi -lm && time ./lumi
+    
+    ********************************************************
+    
     gcc -Wall -Wextra -Werror Csnow.c -o lumi -lm -fopenmp
     gcc -fopenmp -O3 -march=native Csnow.c -o lumi -lm
 */
