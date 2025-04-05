@@ -109,20 +109,20 @@ def printVec(data, column_name="Unnamed"):
         for i in range(5):
             value = data[i]
             try:
-                print(f"{i}       {float(value):.6f}")
+                print(f"{i}       {float(value):.6e}")
             except ValueError:
                 print(f"{i}       {value}")
         print("       ...")
         for i in range(length-5, length):
             value = data[i]
             try:
-                print(f"{i}    {float(value):.6f}")
+                print(f"{i}    {float(value):.6e}")
             except ValueError:
                 print(f"{i}    {value}")
     else:
         for index, value in enumerate(data):
             try:
-                print(f"{index}       {float(value):.6f}")
+                print(f"{index}       {float(value):.6e}")
             except ValueError:
                 print(f"{index}       {value}")
 
@@ -453,7 +453,7 @@ def main():
 
     # Display results
     #print(pos_temp_mark[:5])
-    printVec(q_rain_vec, column_name="Hourly q rain (m^3/h)")
+    printVec(q_rain_vec, column_name="Hourly q rain (W/m^2)")
 
     #------------------------------------------------------------------------
 
@@ -629,6 +629,7 @@ def main():
     h_o = ho_vec
 
     t_o_range = transient1D(t_o, h_o, d_ins, lam_i, D, dx=0.005, dt=10.0, h_i=h_i)
+    #print(len(t_o_range[0]))
     # Print the temperature distribution for the first and last 5 hours
     for h in range(5):
         print(f"Hour {h}: Inner Temp = {t_o_range[-1][h]:.4e}, Outer Temp = {t_o_range[0][h]:.4e}")
@@ -637,6 +638,10 @@ def main():
         print(f"Hour {len(ho_vec)-h-1}: Inner Temp = {t_o_range[-1][h]:.4e}, Outer Temp = {t_o_range[0][h]:.4e}")
     #printVec(t_o_range[0, :], name="Outer temperature of snow (°C)")  
     #printVec(t_o_range[-1, :], name="Internal temperature of snow (°C)")
+
+    # Correction
+    Tsi_vec = t_o_range[-1]
+    Tso_vec = t_o_range[0]
 
     # Heat flux in
     qi_vec = []
@@ -648,7 +653,7 @@ def main():
     qo_vec = []
     for i in range(len(T_sol_air_vec)):
         qo_vec.append((T_sol_air_vec[i] - Tso_vec[i]) * ho_vec[i]) # W/m^2
-    printVec(qo_vec, column_name="Heat flux put (W/m^2)")
+    printVec(qo_vec, column_name="Heat flux out (W/m^2)")
 
     v_pc_vec = []
     for i in range(len(qi_vec)):
