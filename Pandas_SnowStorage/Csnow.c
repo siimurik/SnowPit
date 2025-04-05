@@ -503,7 +503,7 @@ void print_numeric_array(NumericArray* array, const char* column_name) {
                 printf("%d\tINVALID\n", i);
             }
         }
-        printf("...\n");
+        printf("\t...\n");
         for (int i = length-5; i < length; i++) {
             if (array->is_valid[i]) {
                 printf("%d\t%.6f\n", i, array->values[i]);
@@ -892,6 +892,120 @@ NumericArray calculate_SMR_temp(const NumericArray* hrly_SMR_latent_vec,
     return result;
 }
 
+NumericArray calculate_SMR_rain(const NumericArray* hrly_q_rain_vec,
+    double rho_snow,
+    double A_surf)    
+{
+    // Initialize empty result
+    NumericArray result = {NULL, NULL, 0};
+
+    // Basic validation
+    if (!hrly_q_rain_vec || !hrly_q_rain_vec->values) {
+        fprintf(stderr, "Error: Invalid input array\n");
+        return result;
+    }
+
+    const int length = hrly_q_rain_vec->length;
+
+    // Allocate memory
+    result.values = malloc(length * sizeof(double));
+    result.is_valid = malloc(length * sizeof(bool));
+    if (!result.values || !result.is_valid) {
+        free(result.values);
+        free(result.is_valid);
+        fprintf(stderr, "Error: Memory allocation failed\n");
+    return result;
+    }
+    result.length = length;
+
+    // Pre-calculate the constant factor
+    const double rain_coeff = rho_snow / A_surf;
+
+    // Simple calculation loop
+    for (int i = 0; i < length; i++) {
+        result.values[i] = rain_coeff * hrly_q_rain_vec->values[i];
+        result.is_valid[i] = hrly_q_rain_vec->is_valid[i]; // Inherit validity
+    }
+
+    return result;
+}
+
+NumericArray calculate_total_SMR(const NumericArray* SMR_temp_vec,
+    const NumericArray* SMR_rain_vec) 
+{
+    // Initialize empty result
+    NumericArray result = {NULL, NULL, 0};
+
+    // Validate inputs
+    if (!SMR_temp_vec || !SMR_rain_vec || 
+        !SMR_temp_vec->values || !SMR_rain_vec->values ||
+        SMR_temp_vec->length != SMR_rain_vec->length) {
+        fprintf(stderr, "Error: Invalid input arrays\n");
+        return result;
+    }
+
+    const int length = SMR_temp_vec->length;
+
+    // Allocate memory
+    result.values = malloc(length * sizeof(double));
+    result.is_valid = malloc(length * sizeof(bool));
+    if (!result.values || !result.is_valid) {
+        free(result.values);
+        free(result.is_valid);
+        fprintf(stderr, "Error: Memory allocation failed\n");
+        return result;
+    }
+    result.length = length;
+
+    // Simple calculation loop
+    for (int i = 0; i < length; i++) {
+        result.values[i] = SMR_temp_vec->values[i] + SMR_rain_vec->values[i];
+        result.is_valid[i] = SMR_temp_vec->is_valid[i] && SMR_rain_vec->is_valid[i];
+    }
+
+    return result;
+}
+
+NumericArray cumsum(const NumericArray* input) {
+    // Initialize empty result
+    NumericArray result = {NULL, NULL, 0};
+    
+    // Validate input
+    if (!input || !input->values) {
+        fprintf(stderr, "Error: Invalid input array\n");
+        return result;
+    }
+
+    const int length = input->length;
+    
+    // Allocate memory
+    result.values = malloc(length * sizeof(double));
+    result.is_valid = malloc(length * sizeof(bool));
+    if (!result.values || !result.is_valid) {
+        free(result.values);
+        free(result.is_valid);
+        fprintf(stderr, "Error: Memory allocation failed\n");
+        return result;
+    }
+    result.length = length;
+
+    // Calculate cumulative sum
+    double running_total = 0.0;
+    for (int i = 0; i < length; i++) {
+        if (input->is_valid[i]) {
+            running_total += input->values[i];
+            result.values[i] = running_total;
+            result.is_valid[i] = true;
+        } else {
+            // Propagate invalid state but keep accumulating
+            result.values[i] = running_total;  // Continue sum
+            result.is_valid[i] = false;        // Mark as invalid
+        }
+    }
+
+    return result;
+}
+
 /////////////////////////////////////////////////////////////////////////////////////////////
 /////////////////////////////////////////////////////////////////////////////////////////////
 /////////////////////////////////////////////////////////////////////////////////////////////
@@ -1035,6 +1149,21 @@ int main() {
 
     //------------------------------------------------------------------------------------
 
+    NumericArray SMR_rain_vec = calculate_SMR_rain(&hrly_q_rain_vec, rho_snow, A_surf);
+    print_numeric_array(&SMR_rain_vec, "SMR due to rain [kg/(m^2*h)]");
+
+    //------------------------------------------------------------------------------------
+    
+    NumericArray SMR_total_vec = calculate_total_SMR(&SMR_temp_vec, &SMR_rain_vec);
+    print_numeric_array(&SMR_total_vec, "Combined toal SMR [kg/(m^2*h)]");
+
+    //------------------------------------------------------------------------------------
+    
+    NumericArray SMR_rainT_vec = cumsum(&SMR_total_vec);
+    print_numeric_array(&SMR_rainT_vec, "Rain and T cumulative (m³/h)");
+    
+    //------------------------------------------------------------------------------------
+
     // Cleanup
     free_string_array(&air_temp_raw);
     free_numeric_array(&air_temp_vec);
@@ -1054,6 +1183,9 @@ int main() {
     free_numeric_array(&q_rain_vec);
     free_numeric_array(&hrly_q_rain_vec);
     free_numeric_array(&SMR_temp_vec);
+    free_numeric_array(&SMR_rain_vec);
+    free_numeric_array(&SMR_total_vec);
+    free_numeric_array(&SMR_rainT_vec);
 
     free_csv_data(data);
 
