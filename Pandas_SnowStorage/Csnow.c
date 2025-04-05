@@ -26,14 +26,15 @@ typedef struct {
 } StringArray;
 
 // Function prototypes
-const char* detect_encoding(const char* file_path);
-int count_columns(const char* line);
-char** parse_csv_line(const char* line, int max_columns);
-void free_csv_row(char** row, int cols);
-void free_csv_data(CSVData* data);
-CSVData* read_csv_with_encoding(const char* file_path, int* columns_to_keep, int num_cols_to_keep);
+//const char* detect_encoding(const char* file_path);
+//int count_columns(const char* line);
+//char** parse_csv_line(const char* line, int max_columns);
+//void free_csv_row(char** row, int cols);
+//void free_csv_data(CSVData* data);
+//CSVData* read_csv_with_encoding(const char* file_path, int* columns_to_keep, int num_cols_to_keep);
 
 const char* detect_encoding(const char* file_path) {
+    (void)file_path;  // Explicitly mark as unused
     return "ISO-8859-1";
 }
 
@@ -604,8 +605,9 @@ NumericArray calculate_solar_air_temp_simple(const NumericArray* glob_solir_vec,
     NumericArray result = {NULL, NULL, 0};
 
     // Basic validation
-    if (!glob_solir_vec || !air_temp_vec || 
-        glob_solir_vec->length != air_temp_vec->length) {
+    if (!glob_solir_vec || !air_temp_vec ||             // NULL pointer check
+        glob_solir_vec->length != air_temp_vec->length) // Vector length check
+    {  
         return result;
     }
 
@@ -642,6 +644,7 @@ NumericArray calculate_surface_power(const NumericArray* T_sol_air_vec,
 
     // Basic validation
     if (!T_sol_air_vec || !T_sol_air_vec->values) {
+        fprintf(stderr, "Error: Invalid input array\n");
         return result;
     }
 
@@ -651,8 +654,8 @@ NumericArray calculate_surface_power(const NumericArray* T_sol_air_vec,
     result.values = malloc(length * sizeof(double));
     result.is_valid = malloc(length * sizeof(bool));
     if (!result.values || !result.is_valid) {
-    free(result.values);
-    free(result.is_valid);
+        free(result.values);
+        free(result.is_valid);
     return result;
     }
     result.length = length;
@@ -662,8 +665,45 @@ NumericArray calculate_surface_power(const NumericArray* T_sol_air_vec,
 
     // Simple calculation loop
     for (int i = 0; i < length; i++) {
-    result.values[i] = heat_transfer_coeff * T_sol_air_vec->values[i];
-    result.is_valid[i] = T_sol_air_vec->is_valid[i]; // Inherit validity
+        result.values[i] = heat_transfer_coeff * T_sol_air_vec->values[i];
+        result.is_valid[i] = T_sol_air_vec->is_valid[i]; // Inherit validity
+    }
+
+    return result;
+}
+
+NumericArray calculate_surf_meltrate(const NumericArray* Q_surf_vec,
+    double L_f,
+    double rho_snow)     
+{
+    // Initialize empty result
+    NumericArray result = {NULL, NULL, 0};
+
+    // Basic validation
+    if (!Q_surf_vec || !Q_surf_vec->values) {
+        fprintf(stderr, "Error: Invalid input array\n");
+        return result;
+    }
+
+    const int length = Q_surf_vec->length;
+
+    // Allocate memory
+    result.values = malloc(length * sizeof(double));
+    result.is_valid = malloc(length * sizeof(bool));
+    if (!result.values || !result.is_valid) {
+        free(result.values);
+        free(result.is_valid);
+    return result;
+    }
+    result.length = length;
+
+    // Pre-calculate the constant factor
+    const double melt_rate_coeff = 1.0/(L_f*rho_snow);
+
+    // Simple calculation loop
+    for (int i = 0; i < length; i++) {
+        result.values[i] = melt_rate_coeff * Q_surf_vec->values[i];
+        result.is_valid[i] = Q_surf_vec->is_valid[i]; // Inherit validity
     }
 
     return result;
@@ -780,6 +820,14 @@ int main() {
 
     //------------------------------------------------------------------------------------
 
+    double L_f = 333.4E03;   // J/kg; latent heat of fusion
+    double rho_snow = 411.0; // kg/m^3; density of snow
+
+    NumericArray f_srf_melt_vec = calculate_surf_meltrate(&Q_surf_vec, L_f, rho_snow);
+    print_numeric_array(&f_srf_melt_vec, "Surface melt rate (m^3/s)");
+
+    //------------------------------------------------------------------------------------
+
 
     // Cleanup
     free_string_array(&air_temp_raw);
@@ -795,7 +843,7 @@ int main() {
 
     free_numeric_array(&T_sol_air_vec);
     free_numeric_array(&Q_surf_vec);
-
+    free_numeric_array(&f_srf_melt_vec);
 
     free_csv_data(data);
 
