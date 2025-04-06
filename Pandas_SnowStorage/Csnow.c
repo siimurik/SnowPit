@@ -1,20 +1,19 @@
 /*
-    gcc -O3 -march=native Csnow.c -o lumi -lm && time ./lumi
-    
-    ********************************************************
-    
+    gcc -O3 -fopenmp -march=native -ffast-math test.c -o parallel -lm
+    gcc -O3 -fopenmp -mfpmath=387 -ffloat-store test.c -o kahan -lm
     gcc -Wall -Wextra -Werror Csnow.c -o lumi -lm -fopenmp
-    gcc -fopenmp -O3 -march=native Csnow.c -o lumi -lm
+    
+    # For benchmarking
+    hyperfine --warmup 3 './serial' './parallel' --export-markdown bench.md
 */
 
-//#include <omp.h> 
+#include <omp.h> 
 #include <math.h>  // Required for exp() and pow() functions
 #include <ctype.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <stdbool.h>
-
 
 typedef struct {
     char*** data;
@@ -27,7 +26,7 @@ typedef struct {
 // Structure to hold converted data with error information
 typedef struct {
     double* values;    // Array of converted values
-    bool* is_valid;    // Array indicating valid conversions
+    //bool* is_valid;    // Array indicating valid conversions
     int length;        // Number of elements
 } NumericArray;
 
@@ -47,6 +46,12 @@ typedef struct {
     int rows;
     int cols;
 } Matrix;
+
+typedef struct {
+    double* data;  // Single contiguous block for matrix data
+    int rows;
+    int cols;
+} FlatMatrix;
 
 const char* detect_encoding(const char* file_path) {
     (void)file_path;  // Explicitly mark as unused
@@ -232,8 +237,6 @@ CSVData* read_csv_with_encoding(const char* file_path, int* columns_to_keep, int
     return csv_data;
 }
 
-
-
 void free_csv_data(CSVData* data) {
     if (!data) return;
     for (int i = 0; i < data->rows; i++) {
@@ -287,40 +290,6 @@ int find_index(CSVData* data, int column_index, const char* value) {
     }
     return -1;
 }
-
-/*
-int find_index_parallel(CSVData* data, int column_index, const char* value) {
-    if (!data || column_index < 0 || column_index >= data->cols_kept) {
-        return -1;
-    }
-    
-    int found_index = -1;
-    
-    #pragma omp parallel
-    {
-        #pragma omp for
-        for (int i = 0; i < data->rows; i++) {
-            // Skip if already found by another thread
-            if (found_index != -1) continue;
-            
-            if (strcmp(data->data[i][column_index], value) == 0) {
-                #pragma omp critical
-                {
-                    // Only update if this is the first occurrence found
-                    if (found_index == -1 || i < found_index) {
-                        found_index = i;
-                    }
-                }
-                
-                // Optional: Break out of the loop
-                #pragma omp cancel for
-            }
-        }
-    }
-    
-    return found_index;
-}
-*/
 
 // Function to extract a column as an array of strings
 char** extract_column(CSVData* data, int column_index) {
@@ -401,13 +370,11 @@ void print_data_range(CSVData* data, int start, int end, const char* column_name
     printf("Name: %s, Length: %d\n", column_name, length);
 }
 
-
-
 // Function to convert string array to double array
 NumericArray convert_string_array_to_double(StringArray* string_arr) {
     NumericArray result;
     result.values = NULL;
-    result.is_valid = NULL;
+    //result.is_valid = NULL;
     result.length = 0;
     
     if (!string_arr || string_arr->length == 0) {
@@ -415,13 +382,13 @@ NumericArray convert_string_array_to_double(StringArray* string_arr) {
     }
     
     result.values = malloc(string_arr->length * sizeof(double));
-    result.is_valid = malloc(string_arr->length * sizeof(bool));
-    if (!result.values || !result.is_valid) {
-        free(result.values);
-        free(result.is_valid);
-        result.length = 0;
-        return result;
-    }
+    //result.is_valid = malloc(string_arr->length * sizeof(bool));
+    //if (!result.values || !result.is_valid) {
+    //    free(result.values);
+    //    free(result.is_valid);
+    //    result.length = 0;
+    //    return result;
+    //}
     
     result.length = string_arr->length;
     
@@ -431,28 +398,27 @@ NumericArray convert_string_array_to_double(StringArray* string_arr) {
         result.values[i] = strtod(cleaned, &endptr);
         
         // Check if conversion was successful
-        result.is_valid[i] = (*cleaned != '\0' && *endptr == '\0');
-        if (!result.is_valid[i]) {
-            fprintf(stderr, "Warning: Could not convert '%s' to double\n", string_arr->strings[i]);
-            result.values[i] = 0.0; // Default value for invalid
-        }
+        //result.is_valid[i] = (*cleaned != '\0' && *endptr == '\0');
+        //if (!result.is_valid[i]) {
+        //    fprintf(stderr, "Warning: Could not convert '%s' to double\n", string_arr->strings[i]);
+        //    result.values[i] = 0.0; // Default value for invalid
+        //}
     }
     
     return result;
 }
 
-
 // Function to convert string array to int array
 NumericArray convert_to_int(char** string_array, int length) {
     NumericArray result;
     result.values = malloc(length * sizeof(double)); // Using double to match the struct
-    result.is_valid = malloc(length * sizeof(bool));
+    //result.is_valid = malloc(length * sizeof(bool));
     result.length = length;
     
-    if (!result.values || !result.is_valid) {
+    if (!result.values /*|| !result.is_valid*/) {
         // Handle memory allocation failure
         if (result.values) free(result.values);
-        if (result.is_valid) free(result.is_valid);
+        //if (result.is_valid) free(result.is_valid);
         result.length = 0;
         return result;
     }
@@ -464,11 +430,11 @@ NumericArray convert_to_int(char** string_array, int length) {
         // Check if conversion was successful
         if (endptr == string_array[i] || *endptr != '\0') {
             result.values[i] = 0;  // Default value for invalid conversions
-            result.is_valid[i] = false;
+            //result.is_valid[i] = false;
             fprintf(stderr, "Warning: Could not convert '%s' to int\n", string_array[i]);
         } else {
             result.values[i] = (double)value; // Store as double to match the struct
-            result.is_valid[i] = true;
+            //result.is_valid[i] = true;
         }
     }
     
@@ -479,9 +445,9 @@ NumericArray convert_to_int(char** string_array, int length) {
 void free_numeric_array(NumericArray* arr) {
     if (arr) {
         free(arr->values);
-        free(arr->is_valid);
+        //free(arr->is_valid);
         arr->values = NULL;
-        arr->is_valid = NULL;
+        //arr->is_valid = NULL;
         arr->length = 0;
     }
 }
@@ -549,34 +515,32 @@ void print_numeric_array(NumericArray* array, const char* column_name) {
     
     if (length > 10) {
         for (int i = 0; i < 5; i++) {
-            if (array->is_valid[i]) {
+            //if (array->is_valid[i]) {
                 printf("%d\t%.6e\n", i, array->values[i]);
-            } else {
-                printf("%d\tINVALID\n", i);
-            }
+            //} else {
+            //    printf("%d\tINVALID\n", i);
+            //}
         }
         printf("\t...\n");
         for (int i = length-5; i < length; i++) {
-            if (array->is_valid[i]) {
+            //if (array->is_valid[i]) {
                 printf("%d\t%.6e\n", i, array->values[i]);
-            } else {
-                printf("%d\tINVALID\n", i);
-            }
+            //} else {
+            //    printf("%d\tINVALID\n", i);
+            //}
         }
     } else {
         for (int i = 0; i < length; i++) {
-            if (array->is_valid[i]) {
+            //if (array->is_valid[i]) {
                 printf("%d\t%.6e\n", i, array->values[i]);
-            } else {
-                printf("%d\tINVALID\n", i);
-            }
+            //} else {
+            //    printf("%d\tINVALID\n", i);
+            //}
         }
     }
     
     printf("Name: %s, Length: %d\n", column_name, length);
 }
-
-
 
 void print_all_headers(CSVData* data) {
     if (!data || !data->data || data->rows == 0) return;
@@ -598,63 +562,16 @@ void debug_string_array(StringArray* arr, const char* name) {
     }
 }
 
-// Fast calculation with separate allocations
-NumericArray calculate_solar_air_temp_fast(const NumericArray* glob_solir_vec,
-    const NumericArray* air_temp_vec,
-    double alpha,
-    double h,
-    double T_cor_fact) 
-{
-    NumericArray result = {NULL, NULL, 0};
 
-    // Input validation
-    if (!glob_solir_vec || !air_temp_vec || 
-        !glob_solir_vec->values || !air_temp_vec->values ||
-        !glob_solir_vec->is_valid || !air_temp_vec->is_valid ||
-        glob_solir_vec->length != air_temp_vec->length) {
-        return result;
-    }
-
-    const int length = glob_solir_vec->length;
-
-    // Allocate memory
-    result.values = malloc(length * sizeof(double));
-    result.is_valid = malloc(length * sizeof(bool));
-
-    if (!result.values || !result.is_valid) {
-        free(result.values);
-        free(result.is_valid);
-        return result;
-    }
-
-    result.length = length;
-
-    // Performance-critical loop
-    const double* restrict glob_solir = glob_solir_vec->values;
-    const double* restrict air_temp = air_temp_vec->values;
-    const bool* restrict valid1 = glob_solir_vec->is_valid;
-    const bool* restrict valid2 = air_temp_vec->is_valid;
-
-    double* restrict out_values = result.values;
-    bool* restrict out_valid = result.is_valid;
-
-    for (int i = 0; i < length; i++) {
-        const bool valid = valid1[i] && valid2[i];
-        out_valid[i] = valid;
-        out_values[i] = valid ? (alpha * glob_solir[i] / h + air_temp[i] - T_cor_fact) : 0.0;
-    }
-
-    return result;
-}
-
-NumericArray calculate_solar_air_temp_simple(const NumericArray* glob_solir_vec,
+NumericArray calculate_solar_air_temp(const NumericArray* glob_solir_vec,
     const NumericArray* air_temp_vec,
     double alpha,
     double h,
     double T_cor_fact) 
 {
     // Initialize empty result
-    NumericArray result = {NULL, NULL, 0};
+    //NumericArray result = {NULL, NULL, 0};
+    NumericArray result = {NULL, 0};
 
     // Basic validation
     if (!glob_solir_vec || !air_temp_vec ||             // NULL pointer check
@@ -668,10 +585,10 @@ NumericArray calculate_solar_air_temp_simple(const NumericArray* glob_solir_vec,
 
     // Allocate memory
     result.values = malloc(length * sizeof(double));
-    result.is_valid = malloc(length * sizeof(bool));
-    if (!result.values || !result.is_valid) {
+    //result.is_valid = malloc(length * sizeof(bool));
+    if (!result.values /*|| !result.is_valid*/) {
         free(result.values);
-        free(result.is_valid);
+        //free(result.is_valid);
         fprintf(stderr, "Error: Memory allocation failed\n");
         return result;
     }
@@ -682,7 +599,7 @@ NumericArray calculate_solar_air_temp_simple(const NumericArray* glob_solir_vec,
         result.values[i] = alpha * glob_solir_vec->values[i] / h 
         + air_temp_vec->values[i] 
         - T_cor_fact;
-        result.is_valid[i] = true; // Assuming all inputs are valid
+        //result.is_valid[i] = true; // Assuming all inputs are valid
     }
 
     return result;
@@ -694,7 +611,8 @@ NumericArray calculate_surface_power(const NumericArray* T_sol_air_vec,
     double d_ins)     
 {
     // Initialize empty result
-    NumericArray result = {NULL, NULL, 0};
+    //NumericArray result = {NULL, NULL, 0};
+    NumericArray result = {NULL, 0};
 
     // Basic validation
     if (!T_sol_air_vec || !T_sol_air_vec->values) {
@@ -706,10 +624,10 @@ NumericArray calculate_surface_power(const NumericArray* T_sol_air_vec,
 
     // Allocate memory
     result.values = malloc(length * sizeof(double));
-    result.is_valid = malloc(length * sizeof(bool));
-    if (!result.values || !result.is_valid) {
+    //result.is_valid = malloc(length * sizeof(bool));
+    if (!result.values /*|| !result.is_valid*/) {
         free(result.values);
-        free(result.is_valid);
+        //free(result.is_valid);
         fprintf(stderr, "Error: Memory allocation failed\n");
     return result;
     }
@@ -721,7 +639,7 @@ NumericArray calculate_surface_power(const NumericArray* T_sol_air_vec,
     // Simple calculation loop
     for (int i = 0; i < length; i++) {
         result.values[i] = heat_transfer_coeff * T_sol_air_vec->values[i];
-        result.is_valid[i] = T_sol_air_vec->is_valid[i]; // Inherit validity
+        //result.is_valid[i] = T_sol_air_vec->is_valid[i]; // Inherit validity
     }
 
     return result;
@@ -732,7 +650,8 @@ NumericArray calculate_surf_meltrate(const NumericArray* Q_surf_vec,
     double rho_snow)     
 {
     // Initialize empty result
-    NumericArray result = {NULL, NULL, 0};
+    //NumericArray result = {NULL, NULL, 0};
+    NumericArray result = {NULL, 0};
 
     // Basic validation
     if (!Q_surf_vec || !Q_surf_vec->values) {
@@ -744,10 +663,10 @@ NumericArray calculate_surf_meltrate(const NumericArray* Q_surf_vec,
 
     // Allocate memory
     result.values = malloc(length * sizeof(double));
-    result.is_valid = malloc(length * sizeof(bool));
-    if (!result.values || !result.is_valid) {
+    //result.is_valid = malloc(length * sizeof(bool));
+    if (!result.values /*|| !result.is_valid*/) {
         free(result.values);
-        free(result.is_valid);
+        //free(result.is_valid);
         fprintf(stderr, "Error: Memory allocation failed\n");
     return result;
     }
@@ -759,7 +678,7 @@ NumericArray calculate_surf_meltrate(const NumericArray* Q_surf_vec,
     // Simple calculation loop
     for (int i = 0; i < length; i++) {
         result.values[i] = melt_rate_coeff * Q_surf_vec->values[i];
-        result.is_valid[i] = Q_surf_vec->is_valid[i]; // Inherit validity
+        //result.is_valid[i] = Q_surf_vec->is_valid[i]; // Inherit validity
     }
 
     return result;
@@ -768,7 +687,8 @@ NumericArray calculate_surf_meltrate(const NumericArray* Q_surf_vec,
 NumericArray calculate_hrly_SMR(const NumericArray* SMR_latent_vec)    
 {
     // Initialize empty result
-    NumericArray result = {NULL, NULL, 0};
+    //NumericArray result = {NULL, NULL, 0};
+    NumericArray result = {NULL, 0};
 
     // Basic validation
     if (!SMR_latent_vec || !SMR_latent_vec->values) {
@@ -780,10 +700,10 @@ NumericArray calculate_hrly_SMR(const NumericArray* SMR_latent_vec)
 
     // Allocate memory
     result.values = malloc(length * sizeof(double));
-    result.is_valid = malloc(length * sizeof(bool));
-    if (!result.values || !result.is_valid) {
+    //result.is_valid = malloc(length * sizeof(bool));
+    if (!result.values /*|| !result.is_valid*/) {
         free(result.values);
-        free(result.is_valid);
+        //free(result.is_valid);
         fprintf(stderr, "Error: Memory allocation failed\n");
     return result;
     }
@@ -795,7 +715,7 @@ NumericArray calculate_hrly_SMR(const NumericArray* SMR_latent_vec)
     // Simple calculation loop
     for (int i = 0; i < length; i++) {
         result.values[i] = hrly_coeff * SMR_latent_vec->values[i];
-        result.is_valid[i] = SMR_latent_vec->is_valid[i]; // Inherit validity
+        //result.is_valid[i] = SMR_latent_vec->is_valid[i]; // Inherit validity
     }
 
     return result;
@@ -807,7 +727,8 @@ NumericArray calculate_rain_heat_flux(const NumericArray* prec_vec,
     double c_water) 
 {
     // Initialize empty result
-    NumericArray result = {NULL, NULL, 0};
+    //NumericArray result = {NULL, NULL, 0};
+    NumericArray result = {NULL, 0};
 
     // Validate inputs
     if (!prec_vec || !air_temp_vec || 
@@ -821,13 +742,13 @@ NumericArray calculate_rain_heat_flux(const NumericArray* prec_vec,
 
     // Allocate memory
     result.values = malloc(length * sizeof(double));
-    result.is_valid = malloc(length * sizeof(bool));
-    if (!result.values || !result.is_valid) {
-        free(result.values);
-        free(result.is_valid);
-        fprintf(stderr, "Error: Memory allocation failed\n");
-        return result;
-    }
+    //result.is_valid = malloc(length * sizeof(bool));
+    //if (!result.values || !result.is_valid) {
+    //    free(result.values);
+    //    free(result.is_valid);
+    //    fprintf(stderr, "Error: Memory allocation failed\n");
+    //    return result;
+    //}
     result.length = length;
 
     // Pre-calculate the constant factor
@@ -835,15 +756,15 @@ NumericArray calculate_rain_heat_flux(const NumericArray* prec_vec,
 
     // Calculate heat flux
     for (int i = 0; i < length; i++) {
-        if (air_temp_vec->is_valid[i] && prec_vec->is_valid[i] && 
-            air_temp_vec->values[i] > 0.0) {
+        //if (air_temp_vec->is_valid[i] && prec_vec->is_valid[i] && 
+        if (air_temp_vec->values[i] > 0.0) {
             // Only calculate for positive temperatures
             result.values[i] = prec_vec->values[i] * heat_flux_coeff * air_temp_vec->values[i];
-            result.is_valid[i] = true;
+            //result.is_valid[i] = true;
         } else {
             // Set to 0.0 for invalid or non-positive temperatures
             result.values[i] = 0.0;
-            result.is_valid[i] = air_temp_vec->is_valid[i] && prec_vec->is_valid[i];
+            //result.is_valid[i] = air_temp_vec->is_valid[i] && prec_vec->is_valid[i];
         }
     }
 
@@ -860,7 +781,8 @@ NumericArray calculate_hrly_RHF(const NumericArray* prec_vec,
     double rho_snow)    
 {
     // Initialize empty result
-    NumericArray result = {NULL, NULL, 0};
+    //NumericArray result = {NULL, NULL, 0};
+    NumericArray result = {NULL, 0};
 
     // Validate inputs
     if (!prec_vec || !air_temp_vec || 
@@ -874,13 +796,13 @@ NumericArray calculate_hrly_RHF(const NumericArray* prec_vec,
 
     // Allocate memory
     result.values = malloc(length * sizeof(double));
-    result.is_valid = malloc(length * sizeof(bool));
-    if (!result.values || !result.is_valid) {
-        free(result.values);
-        free(result.is_valid);
-        fprintf(stderr, "Error: Memory allocation failed\n");
-    return result;
-    }
+    //result.is_valid = malloc(length * sizeof(bool));
+    //if (!result.values || !result.is_valid) {
+    //    free(result.values);
+    //    free(result.is_valid);
+    //    fprintf(stderr, "Error: Memory allocation failed\n");
+    //return result;
+    //}
     result.length = length;
 
     // Pre-calculate the constant factor
@@ -889,7 +811,7 @@ NumericArray calculate_hrly_RHF(const NumericArray* prec_vec,
     // Simple calculation loop
     for (int i = 0; i < length; i++) {
         result.values[i] = hrly_rain_coeff * prec_vec->values[i] * air_temp_vec->values[i];
-        result.is_valid[i] = air_temp_vec->is_valid[i] && prec_vec->is_valid[i]; //true 
+        //result.is_valid[i] = air_temp_vec->is_valid[i] && prec_vec->is_valid[i]; //true 
     }
 
     return result;
@@ -901,7 +823,8 @@ NumericArray calculate_SMR_temp(const NumericArray* hrly_SMR_latent_vec,
     double A_surf) 
 {
     // Initialize empty result
-    NumericArray result = {NULL, NULL, 0};
+    //NumericArray result = {NULL, NULL, 0};
+    NumericArray result = {NULL, 0};
 
     // Validate inputs
     //if (!hrly_SMR_latent_vec || !air_temp_vec || 
@@ -915,13 +838,13 @@ NumericArray calculate_SMR_temp(const NumericArray* hrly_SMR_latent_vec,
 
     // Allocate memory
     result.values = calloc(length, sizeof(double));
-    result.is_valid = malloc(length * sizeof(bool));
-    if (!result.values || !result.is_valid) {
-        free(result.values);
-        free(result.is_valid);
-        fprintf(stderr, "Error: Memory allocation failed\n");
-        return result;
-    }
+    //result.is_valid = malloc(length * sizeof(bool));
+    //if (!result.values || !result.is_valid) {
+    //    free(result.values);
+    //    free(result.is_valid);
+    //    fprintf(stderr, "Error: Memory allocation failed\n");
+    //    return result;
+    //}
     result.length = length;
 
     // Pre-calculate the constant factor
@@ -929,7 +852,7 @@ NumericArray calculate_SMR_temp(const NumericArray* hrly_SMR_latent_vec,
 
     // Calculate heat flux
     for (int i = 0; i < length; i++) {
-        result.is_valid[i] = hrly_SMR_latent_vec->is_valid[i];
+        //result.is_valid[i] = hrly_SMR_latent_vec->is_valid[i];
 
         if (air_temp_vec->values[i] > 0.0) {
             result.values[i] = hrly_SMR_latent_vec->values[i] * temp_coeff;
@@ -957,7 +880,8 @@ NumericArray calculate_SMR_rain(const NumericArray* hrly_q_rain_vec,
     double A_surf)    
 {
     // Initialize empty result
-    NumericArray result = {NULL, NULL, 0};
+    //NumericArray result = {NULL, NULL, 0};
+    NumericArray result = {NULL, 0};
 
     // Basic validation
     if (!hrly_q_rain_vec || !hrly_q_rain_vec->values) {
@@ -969,13 +893,13 @@ NumericArray calculate_SMR_rain(const NumericArray* hrly_q_rain_vec,
 
     // Allocate memory
     result.values = malloc(length * sizeof(double));
-    result.is_valid = malloc(length * sizeof(bool));
-    if (!result.values || !result.is_valid) {
-        free(result.values);
-        free(result.is_valid);
-        fprintf(stderr, "Error: Memory allocation failed\n");
-    return result;
-    }
+    //result.is_valid = malloc(length * sizeof(bool));
+    //if (!result.values || !result.is_valid) {
+    //    free(result.values);
+    //    free(result.is_valid);
+    //    fprintf(stderr, "Error: Memory allocation failed\n");
+    //return result;
+    //}
     result.length = length;
 
     // Pre-calculate the constant factor
@@ -984,7 +908,7 @@ NumericArray calculate_SMR_rain(const NumericArray* hrly_q_rain_vec,
     // Simple calculation loop
     for (int i = 0; i < length; i++) {
         result.values[i] = rain_coeff * hrly_q_rain_vec->values[i];
-        result.is_valid[i] = hrly_q_rain_vec->is_valid[i]; // Inherit validity
+        //result.is_valid[i] = hrly_q_rain_vec->is_valid[i]; // Inherit validity
     }
 
     return result;
@@ -994,7 +918,8 @@ NumericArray calculate_total_SMR(const NumericArray* SMR_temp_vec,
     const NumericArray* SMR_rain_vec) 
 {
     // Initialize empty result
-    NumericArray result = {NULL, NULL, 0};
+    //NumericArray result = {NULL, NULL, 0};
+    NumericArray result = {NULL, 0};
 
     // Validate inputs
     if (!SMR_temp_vec || !SMR_rain_vec || 
@@ -1008,19 +933,19 @@ NumericArray calculate_total_SMR(const NumericArray* SMR_temp_vec,
 
     // Allocate memory
     result.values = malloc(length * sizeof(double));
-    result.is_valid = malloc(length * sizeof(bool));
-    if (!result.values || !result.is_valid) {
-        free(result.values);
-        free(result.is_valid);
-        fprintf(stderr, "Error: Memory allocation failed\n");
-        return result;
-    }
+    //result.is_valid = malloc(length * sizeof(bool));
+    //if (!result.values || !result.is_valid) {
+    //    free(result.values);
+    //    free(result.is_valid);
+    //    fprintf(stderr, "Error: Memory allocation failed\n");
+    //    return result;
+    //}
     result.length = length;
 
     // Simple calculation loop
     for (int i = 0; i < length; i++) {
         result.values[i] = SMR_temp_vec->values[i] + SMR_rain_vec->values[i];
-        result.is_valid[i] = SMR_temp_vec->is_valid[i] && SMR_rain_vec->is_valid[i];
+        //result.is_valid[i] = SMR_temp_vec->is_valid[i] && SMR_rain_vec->is_valid[i];
     }
 
     return result;
@@ -1028,7 +953,8 @@ NumericArray calculate_total_SMR(const NumericArray* SMR_temp_vec,
 
 NumericArray cumsum(const NumericArray* input) {
     // Initialize empty result
-    NumericArray result = {NULL, NULL, 0};
+    //NumericArray result = {NULL, NULL, 0};
+    NumericArray result = {NULL, 0};
     
     // Validate input
     if (!input || !input->values) {
@@ -1040,27 +966,27 @@ NumericArray cumsum(const NumericArray* input) {
     
     // Allocate memory
     result.values = malloc(length * sizeof(double));
-    result.is_valid = malloc(length * sizeof(bool));
-    if (!result.values || !result.is_valid) {
-        free(result.values);
-        free(result.is_valid);
-        fprintf(stderr, "Error: Memory allocation failed\n");
-        return result;
-    }
+    //result.is_valid = malloc(length * sizeof(bool));
+    //if (!result.values || !result.is_valid) {
+    //    free(result.values);
+    //    free(result.is_valid);
+    //    fprintf(stderr, "Error: Memory allocation failed\n");
+    //    return result;
+    //}
     result.length = length;
 
     // Calculate cumulative sum
     double running_total = 0.0;
     for (int i = 0; i < length; i++) {
-        if (input->is_valid[i]) {
+        //if (input->is_valid[i]) {
             running_total += input->values[i];
             result.values[i] = running_total;
-            result.is_valid[i] = true;
-        } else {
+            //result.is_valid[i] = true;
+        //} else {
             // Propagate invalid state but keep accumulating
-            result.values[i] = running_total;  // Continue sum
-            result.is_valid[i] = false;        // Mark as invalid
-        }
+        //    result.values[i] = running_total;  // Continue sum
+            //result.is_valid[i] = false;        // Mark as invalid
+        //}
     }
 
     return result;
@@ -1072,7 +998,8 @@ NumericArray calculate_emp2_SMR(const NumericArray* glob_solir_vec,
     double d_ins) 
 {
     // Initialize empty result
-    NumericArray result = {NULL, NULL, 0};
+    //NumericArray result = {NULL, NULL, 0};
+    NumericArray result = {NULL, 0};
 
     // Validate inputs
     if (!glob_solir_vec || !air_temp_vec || !wind_speed_vec ||
@@ -1087,13 +1014,13 @@ NumericArray calculate_emp2_SMR(const NumericArray* glob_solir_vec,
 
     // Allocate memory
     result.values = malloc(length * sizeof(double));
-    result.is_valid = malloc(length * sizeof(bool));
-    if (!result.values || !result.is_valid) {
-        free(result.values);
-        free(result.is_valid);
-        fprintf(stderr, "Error: Memory allocation failed\n");
-        return result;
-    }
+    //result.is_valid = malloc(length * sizeof(bool));
+    //if (!result.values || !result.is_valid) {
+    //    free(result.values);
+    //    free(result.is_valid);
+    //    fprintf(stderr, "Error: Memory allocation failed\n");
+    //    return result;
+    //}
     result.length = length;
     
     double g, t, v;
@@ -1104,9 +1031,9 @@ NumericArray calculate_emp2_SMR(const NumericArray* glob_solir_vec,
         v = wind_speed_vec->values[i];
         result.values[i] = -0.09 + 0.00014*g + 0.0575*t + 
                             0.0012*t*v - 0.18*t*d_ins;
-        result.is_valid[i] = glob_solir_vec->is_valid[i] && 
-                             air_temp_vec->is_valid[i] && 
-                             wind_speed_vec->is_valid[i];    // Check all inputs are valid
+        //result.is_valid[i] = glob_solir_vec->is_valid[i] && 
+        //                     air_temp_vec->is_valid[i] && 
+        //                     wind_speed_vec->is_valid[i];    // Check all inputs are valid
     }
 
     return result;
@@ -1151,7 +1078,8 @@ NumericArray calculate_emp1_SMR(const NumericArray* air_temp_vec,
     double d_ins) 
 {
     // Initialize empty result
-    NumericArray result = {NULL, NULL, 0};
+    //NumericArray result = {NULL, NULL, 0};
+    NumericArray result = {NULL, 0};
 
     // Validate all inputs
     if (!air_temp_vec || !wind_speed_vec || !glob_solir_vec || !RH_perc_vec ||
@@ -1168,13 +1096,13 @@ NumericArray calculate_emp1_SMR(const NumericArray* air_temp_vec,
 
     // Allocate memory for final result
     result.values = malloc(length * sizeof(double));
-    result.is_valid = malloc(length * sizeof(bool));
-    if (!result.values || !result.is_valid) {
-        free(result.values);
-        free(result.is_valid);
-        fprintf(stderr, "Error: Memory allocation failed\n");
-        return result;
-    }
+    //result.is_valid = malloc(length * sizeof(bool));
+    //if (!result.values || !result.is_valid) {
+    //    free(result.values);
+    //    free(result.is_valid);
+    //    fprintf(stderr, "Error: Memory allocation failed\n");
+    //    return result;
+    //}
     result.length = length;
 
     //double T_K, RH, vel, sol, temp, Psat, Pw, w;
@@ -1200,10 +1128,10 @@ NumericArray calculate_emp1_SMR(const NumericArray* air_temp_vec,
                                 0.00175*sol + 0.102*temp + 0.192*w;
 
         // Check all inputs are valid
-        result.is_valid[i] =  air_temp_vec->is_valid[i] && 
-                            wind_speed_vec->is_valid[i] &&
-                            glob_solir_vec->is_valid[i] &&
-                            RH_perc_vec->is_valid[i];
+        //result.is_valid[i] =  air_temp_vec->is_valid[i] && 
+        //                    wind_speed_vec->is_valid[i] &&
+        //                    glob_solir_vec->is_valid[i] &&
+        //                    RH_perc_vec->is_valid[i];
     }
 
     return result;
@@ -1214,7 +1142,8 @@ NumericArray calculate_emp_pos_cumsum(const NumericArray* emp2_SMR_vec,
     const NumericArray* air_temp_vec) 
 {
     // Initialize empty result
-    NumericArray result = {NULL, NULL, 0};
+    //NumericArray result = {NULL, NULL, 0};
+    NumericArray result = {NULL, 0};
 
     // Validate inputs
     if (!emp2_SMR_vec || !air_temp_vec || 
@@ -1227,22 +1156,23 @@ NumericArray calculate_emp_pos_cumsum(const NumericArray* emp2_SMR_vec,
     const int length = emp2_SMR_vec->length;
 
     // Allocate memory for both filtered and cumulative results
-    NumericArray filtered = {NULL, NULL, 0};
+    //NumericArray filtered = {NULL, NULL, 0};
+    NumericArray filtered = {NULL, 0};
     filtered.values = malloc(length * sizeof(double));
-    filtered.is_valid = malloc(length * sizeof(bool));
+    //filtered.is_valid = malloc(length * sizeof(bool));
     filtered.length = length;
 
-    if (!filtered.values || !filtered.is_valid) {
-        free(filtered.values);
-        free(filtered.is_valid);
-        fprintf(stderr, "Error: Memory allocation failed\n");
-        return result;
-    }
+    //if (!filtered.values || !filtered.is_valid) {
+    //    free(filtered.values);
+    //    free(filtered.is_valid);
+    //    fprintf(stderr, "Error: Memory allocation failed\n");
+    //    return result;
+    //}
 
     double smr, temp;
     // 1. Apply positive condition filter
     for (int i = 0; i < length; i++) {
-        filtered.is_valid[i] = emp2_SMR_vec->is_valid[i] && air_temp_vec->is_valid[i];
+        //filtered.is_valid[i] = emp2_SMR_vec->is_valid[i] && air_temp_vec->is_valid[i];
         smr = emp2_SMR_vec->values[i];
         temp = air_temp_vec->values[i];
         if (smr < 0.0 || temp < 0.0) {
@@ -1267,14 +1197,15 @@ NumericArray calculate_emp_pos_cumsum(const NumericArray* emp2_SMR_vec,
 
     // Clean up temporary filtered array
     free(filtered.values);
-    free(filtered.is_valid);
+    //free(filtered.is_valid);
 
     return result;
 }
 
 NumericArray calculate_ho_vec(const NumericArray* air_vel_vec) {
     // Initialize empty result
-    NumericArray result = {NULL, NULL, 0};
+    //NumericArray result = {NULL, NULL, 0};
+    NumericArray result = {NULL, 0};
 
     // Validate input
     if (!air_vel_vec || !air_vel_vec->values) {
@@ -1286,18 +1217,18 @@ NumericArray calculate_ho_vec(const NumericArray* air_vel_vec) {
 
     // Allocate memory
     result.values = malloc(length * sizeof(double));
-    result.is_valid = malloc(length * sizeof(bool));
-    if (!result.values || !result.is_valid) {
-        free(result.values);
-        free(result.is_valid);
-        fprintf(stderr, "Error: Memory allocation failed\n");
-        return result;
-    }
+    //result.is_valid = malloc(length * sizeof(bool));
+    //if (!result.values || !result.is_valid) {
+    //    free(result.values);
+    //    free(result.is_valid);
+    //    fprintf(stderr, "Error: Memory allocation failed\n");
+    //    return result;
+    //}
     result.length = length;
 
     // Calculate ho values
     for (int i = 0; i < length; i++) {
-        result.is_valid[i] = air_vel_vec->is_valid[i];
+        //result.is_valid[i] = air_vel_vec->is_valid[i];
         const double vel = air_vel_vec->values[i];
         // Conditional calculation
         if (vel <= 5.0) {
@@ -1310,8 +1241,6 @@ NumericArray calculate_ho_vec(const NumericArray* air_vel_vec) {
 
     return result;
 }
-
-
 
 Vector solve_tdma(const Vector* a, const Vector* b, const Vector* c, const Vector* d) {
     Vector x = {NULL, b->length};
@@ -1440,11 +1369,452 @@ void free_matrix(Matrix* mat) {
     mat->cols = 0;
 }
 
+
+FlatMatrix transient1D_flat(const Vector* t_o, const Vector* h_o,
+                          double d_ins, double lam_i, double D,
+                          double dx, double dt, double h_i) {
+    FlatMatrix T_nh = {NULL, 0, 0};
+    
+    // Validate inputs
+    if (!t_o || !h_o || t_o->length != h_o->length) {
+        fprintf(stderr, "Error: Invalid temperature or h_o vectors\n");
+        return T_nh;
+    }
+
+    const double t_i = 0.0;  // Inner temperature (°C)
+    const int n_el = (int)(d_ins / dx);  // Number of elements
+    const int nodes = n_el + 1;          // Number of nodes
+    const int nr_hour = t_o->length;     // Number of hours
+    const int nh = (int)(3600.0 / dt);   // Time steps per hour
+
+    // Allocate result matrix as single block (row-major order)
+    T_nh.data = malloc(nodes * nr_hour * sizeof(double));
+    if (!T_nh.data) {
+        fprintf(stderr, "Error: Memory allocation failed\n");
+        return T_nh;
+    }
+    T_nh.rows = nodes;
+    T_nh.cols = nr_hour;
+
+    // Initialize temperature distribution
+    Vector T_n = {malloc(nodes * sizeof(double)), nodes};
+    for (int i = 0; i < nodes; i++) {
+        T_n.values[i] = 0.0;
+    }
+
+    // TDMA vectors
+    Vector a = {malloc(nodes * sizeof(double)), nodes};
+    Vector b = {malloc(nodes * sizeof(double)), nodes};
+    Vector c = {malloc(nodes * sizeof(double)), nodes};
+    Vector d = {malloc(nodes * sizeof(double)), nodes};
+
+    // Main loop over hours
+    for (int h = 0; h < nr_hour; h++) {
+        const double dFo = D * dt / (dx * dx);
+        const double dBio_i = h_i * dx / lam_i;
+        const double dBio_o = h_o->values[h] * dx / lam_i;
+
+        // Time steps within one hour
+        for (int step = 0; step < nh; step++) {
+            // Set up tridiagonal system
+            b.values[0] = 1.0 + 2.0 * dFo + 2.0 * dFo * dBio_o;
+            c.values[0] = -2.0 * dFo;
+            d.values[0] = T_n.values[0] + 2.0 * dFo * dBio_o * t_o->values[h];
+
+            for (int j = 1; j < nodes-1; j++) {
+                a.values[j] = -dFo;
+                b.values[j] = 1.0 + 2.0 * dFo;
+                c.values[j] = -dFo;
+                d.values[j] = T_n.values[j];
+            }
+
+            a.values[nodes-1] = -2.0 * dFo;
+            b.values[nodes-1] = 1.0 + 2.0 * dFo + 2.0 * dFo * dBio_i;
+            d.values[nodes-1] = T_n.values[nodes-1] + 2.0 * dFo * dBio_i * t_i;
+
+            // Solve system
+            Vector solution = solve_tdma(&a, &b, &c, &d);
+            for (int j = 0; j < nodes; j++) {
+                T_n.values[j] = solution.values[j];
+            }
+            free(solution.values);
+        }
+
+        // Store results for this hour (row-major order)
+        for (int j = 0; j < nodes; j++) {
+            T_nh.data[j * nr_hour + h] = T_n.values[j];  // Note the indexing change
+        }
+    }
+
+    // Cleanup
+    free(a.values);
+    free(b.values);
+    free(c.values);
+    free(d.values);
+    free(T_n.values);
+
+    return T_nh;
+}
+
+Vector solve_tdma_threadlocal(const Vector* a, const Vector* b, 
+    const Vector* c, const Vector* d,
+    double* c_prime, double* d_prime) 
+{
+    Vector x = {NULL, b->length};
+    const int n = b->length;
+    x.values = malloc(n * sizeof(double));
+
+    // Forward sweep (preserves operation order)
+    c_prime[0] = c->values[0] / b->values[0];
+    d_prime[0] = d->values[0] / b->values[0];
+
+    for (int i = 1; i < n; i++) {
+        double denom = b->values[i] - a->values[i] * c_prime[i-1];
+        c_prime[i] = c->values[i] / denom;
+        d_prime[i] = (d->values[i] - a->values[i] * d_prime[i-1]) / denom;
+    }
+
+    // Back substitution
+    x.values[n-1] = d_prime[n-1];
+    for (int i = n-2; i >= 0; i--) {
+        x.values[i] = d_prime[i] - c_prime[i] * x.values[i+1];
+    }
+
+    return x;
+}
+
+Vector solve_tdma_kahan(const Vector* a, const Vector* b, 
+    const Vector* c, const Vector* d,
+    double* c_prime, double* d_prime) 
+{
+    Vector x = {NULL, b->length};
+    const int n = b->length;
+    x.values = malloc(n * sizeof(double));
+
+    // Forward sweep with independent Kahan compensators
+    double comp_c = 0.0, comp_d = 0.0;
+    {
+        // c_prime[0]
+        double y = c->values[0] / b->values[0] - comp_c;
+        double t = c_prime[0] + y;
+        comp_c = (c_prime[0] - t) + y;
+        c_prime[0] = t;
+
+        // d_prime[0]
+        y = d->values[0] / b->values[0] - comp_d;
+        t = d_prime[0] + y;
+        comp_d = (d_prime[0] - t) + y;
+        d_prime[0] = t;
+    }
+
+    for (int i = 1; i < n; i++) {
+        double denom = b->values[i] - a->values[i] * c_prime[i-1];
+
+        // c_prime[i] with Kahan
+        double y = c->values[i] / denom - comp_c;
+        double t = c_prime[i] + y;
+        comp_c = (c_prime[i] - t) + y;
+        c_prime[i] = t;
+
+        // d_prime[i] with Kahan
+        y = (d->values[i] - a->values[i] * d_prime[i-1]) / denom - comp_d;
+        t = d_prime[i] + y;
+        comp_d = (d_prime[i] - t) + y;
+        d_prime[i] = t;
+    }
+
+    // Back substitution with Kahan
+    x.values[n-1] = d_prime[n-1];
+    double comp_x = 0.0;
+    for (int i = n-2; i >= 0; i--) {
+        double y = c_prime[i] * x.values[i+1] - comp_x;
+        double t = d_prime[i] - y;
+        comp_x = (d_prime[i] - t) - y;
+        x.values[i] = t;
+    }
+
+    return x;
+}
+
+// Helper function (same as original serial computation)
+void compute_hour_serial(int h, Vector* T_n, const Vector* t_o, const Vector* h_o,
+    double lam_i, double D, double dx, double dt, 
+    double h_i, FlatMatrix* T_nh)
+{
+    const double t_i = 0.0;
+    const int nodes = T_n->length;
+    const int nh = (int)(3600.0 / dt);
+
+    Vector a = {malloc(nodes * sizeof(double)), nodes};
+    Vector b = {malloc(nodes * sizeof(double)), nodes};
+    Vector c = {malloc(nodes * sizeof(double)), nodes};
+    Vector d = {malloc(nodes * sizeof(double)), nodes};
+
+    const double dFo = D * dt / (dx * dx);
+    const double dBio_i = h_i * dx / lam_i;
+    const double dBio_o = h_o->values[h] * dx / lam_i;
+
+    for (int step = 0; step < nh; step++) {
+        // Set up tridiagonal system
+        b.values[0] = 1.0 + 2.0 * dFo + 2.0 * dFo * dBio_o;
+        c.values[0] = -2.0 * dFo;
+        d.values[0] = T_n->values[0] + 2.0 * dFo * dBio_o * t_o->values[h];
+
+        for (int j = 1; j < nodes-1; j++) {
+            a.values[j] = -dFo;
+            b.values[j] = 1.0 + 2.0 * dFo;
+            c.values[j] = -dFo;
+            d.values[j] = T_n->values[j];
+        }
+
+        a.values[nodes-1] = -2.0 * dFo;
+        b.values[nodes-1] = 1.0 + 2.0 * dFo + 2.0 * dFo * dBio_i;
+        d.values[nodes-1] = T_n->values[nodes-1] + 2.0 * dFo * dBio_i * t_i;
+        Vector solution = solve_tdma(&a, &b, &c, &d);
+        memcpy(T_n->values, solution.values, nodes * sizeof(double));
+        free(solution.values);
+    }
+
+    // Store results
+    for (int j = 0; j < nodes; j++) {
+        T_nh->data[j * T_nh->cols + h] = T_n->values[j];
+    }
+
+    free(a.values); free(b.values); free(c.values); free(d.values);
+}
+
+void compute_hour_parallel(int h, Vector* T_n, const Vector* t_o, const Vector* h_o,
+    double lam_i, double D, double dx, double dt,
+    double h_i, FlatMatrix* T_nh, double* tdma_buffer) 
+{
+    const double t_i = 0.0;  // Added missing declaration
+    const int nodes = T_n->length;
+    const int nh = (int)(3600.0 / dt);
+    const double dFo = D * dt / (dx * dx);
+    const double dBio_i = h_i * dx / lam_i;
+    const double dBio_o = h_o->values[h] * dx / lam_i;
+
+    Vector a = {tdma_buffer, nodes};               // Reuse buffers
+    Vector b = {tdma_buffer + nodes, nodes};       // instead of
+    Vector c = {tdma_buffer + 2*nodes, nodes};     // allocating
+    Vector d = {tdma_buffer + 3*nodes, nodes};     // each time
+
+    for (int step = 0; step < nh; step++) {
+        // Tridiagonal coefficients setup
+        b.values[0] = 1.0 + 2.0 * dFo + 2.0 * dFo * dBio_o;
+        c.values[0] = -2.0 * dFo;
+        d.values[0] = T_n->values[0] + 2.0 * dFo * dBio_o * t_o->values[h];
+
+        for (int j = 1; j < nodes-1; j++) {
+            a.values[j] = -dFo;
+            b.values[j] = 1.0 + 2.0 * dFo;
+            c.values[j] = -dFo;
+            d.values[j] = T_n->values[j];
+        }
+
+        a.values[nodes-1] = -2.0 * dFo;
+        b.values[nodes-1] = 1.0 + 2.0 * dFo + 2.0 * dFo * dBio_i;
+        d.values[nodes-1] = T_n->values[nodes-1] + 2.0 * dFo * dBio_i * t_i;
+
+        // Solve using thread-local buffers
+        double* solve_buffer = tdma_buffer + 4*nodes;  // Extra space
+        /*
+        Vector sol = solve_tdma_threadlocal(&a, &b, &c, &d, 
+                        solve_buffer, 
+                        solve_buffer + nodes);
+        */
+
+        // Kahan approach
+        ///*
+        memset(solve_buffer, 0, 2 * nodes * sizeof(double)); // Clear c_prime and d_prime
+        Vector sol = solve_tdma_kahan(&a, &b, &c, &d, solve_buffer, solve_buffer + nodes);
+        //*/
+        
+        memcpy(T_n->values, sol.values, nodes * sizeof(double));
+        free(sol.values);
+    }
+
+    // Store results
+    for (int j = 0; j < nodes; j++) {
+        T_nh->data[j * T_nh->cols + h] = T_n->values[j];
+    }
+}
+
+FlatMatrix transient1D_parallel(const Vector* t_o, const Vector* h_o,
+    double d_ins, double lam_i, double D,
+    double dx, double dt, double h_i)
+{
+    FlatMatrix T_nh = {NULL, 0, 0};
+
+    // Validate inputs
+    if (!t_o || !h_o || t_o->length != h_o->length) {
+        fprintf(stderr, "Error: Invalid input vectors\n");
+        return T_nh;
+    }
+
+    const int nodes = (int)(d_ins / dx) + 1;
+    const int nr_hour = t_o->length;
+
+    // Allocate result matrix (must happen BEFORE parallel region)
+    T_nh.data = malloc(nodes * nr_hour * sizeof(double));
+    if (!T_nh.data) {
+        fprintf(stderr, "Error: Matrix allocation failed\n");
+        return T_nh;
+    }
+    T_nh.rows = nodes;
+    T_nh.cols = nr_hour;
+
+    // Initialize temperature distribution
+    Vector T_n = {malloc(nodes * sizeof(double)), nodes};
+    #pragma omp parallel for
+    for (int i = 0; i < nodes; i++) {
+        T_n.values[i] = 0.0;
+    }
+
+    // 1. SERIAL WARMUP PHASE (first 24 hours)
+    const int WARMUP_HOURS = 24;
+    for (int h = 0; h < WARMUP_HOURS && h < nr_hour; h++) {  // Bound check added
+        compute_hour_serial(h, &T_n, t_o, h_o, lam_i, D, dx, dt, h_i, &T_nh);
+    }
+
+    // 2. PARALLEL PHASE
+    #pragma omp parallel
+    {
+        double* tdma_buffer = malloc(6 * nodes * sizeof(double));
+        if (!tdma_buffer) {
+            fprintf(stderr, "Error: TDMA buffer allocation failed\n");
+            exit(1);
+        }
+    
+        #pragma omp for schedule(static, 24)
+        for (int h = WARMUP_HOURS; h < nr_hour; h++) {
+            Vector T_local = {malloc(nodes * sizeof(double)), nodes};
+            if (!T_local.values) {
+                fprintf(stderr, "Error: T_local allocation failed\n");
+                exit(1);
+            }
+            
+            #pragma omp critical
+            {
+                memcpy(T_local.values, T_n.values, nodes * sizeof(double));
+            }
+
+            // Go in this function choose either thread-local or Kahan approach
+            compute_hour_parallel(h, &T_local, t_o, h_o, lam_i, D, 
+                                dx, dt, h_i, &T_nh, tdma_buffer);
+
+            #pragma omp critical
+            {
+                memcpy(T_n.values, T_local.values, nodes * sizeof(double));
+            }
+
+            free(T_local.values);
+        }
+        free(tdma_buffer);
+    }
+
+    free(T_n.values);
+    return T_nh;
+}
+
+FlatMatrix transient1D_parallel_correct(const Vector* t_o, const Vector* h_o,
+    double d_ins, double lam_i, double D,
+    double dx, double dt, double h_i) 
+{
+    FlatMatrix T_nh = {NULL, 0, 0};
+
+    // Validate inputs
+    if (!t_o || !h_o || t_o->length != h_o->length) {
+        fprintf(stderr, "Error: Invalid input vectors\n");
+        return T_nh;
+    }
+
+    const int nodes = (int)(d_ins / dx) + 1;
+    const int nr_hour = t_o->length;
+
+    // Allocate result matrix (must happen BEFORE parallel region)
+    T_nh.data = malloc(nodes * nr_hour * sizeof(double));
+    if (!T_nh.data) {
+        fprintf(stderr, "Error: Matrix allocation failed\n");
+        return T_nh;
+    }
+    T_nh.rows = nodes;
+    T_nh.cols = nr_hour;
+
+    // Initialize temperature distribution
+    Vector T_n = {malloc(nodes * sizeof(double)), nodes};
+    #pragma omp parallel for
+    for (int i = 0; i < nodes; i++) {
+        T_n.values[i] = 0.0;
+    }
+
+    // 1. SERIAL WARMUP PHASE (first 24 hours)
+    const int WARMUP_HOURS = 24;
+    for (int h = 0; h < WARMUP_HOURS && h < nr_hour; h++) {  // Bound check added
+        compute_hour_serial(h, &T_n, t_o, h_o, lam_i, D, dx, dt, h_i, &T_nh);
+    }
+
+    // 2. PARALLEL PHASE
+    #pragma omp parallel
+    {
+        Vector T_local = {malloc(nodes * sizeof(double)), nodes};
+        Vector a = {malloc(nodes * sizeof(double)), nodes};
+        Vector b = {malloc(nodes * sizeof(double)), nodes};
+        Vector c = {malloc(nodes * sizeof(double)), nodes};
+        Vector d = {malloc(nodes * sizeof(double)), nodes};
+
+        #pragma omp for schedule(static, 24) nowait
+        for (int h = WARMUP_HOURS; h < nr_hour; h++) {
+            // Get consistent initial state
+            #pragma omp critical
+            {
+                memcpy(T_local.values, T_n.values, nodes * sizeof(double));
+            }
+
+            // Process hour (using same serial computation)
+            compute_hour_serial(h, &T_local, t_o, h_o, lam_i, D, dx, dt, h_i, &T_nh);
+
+            // Update global state
+            #pragma omp critical
+            {
+                memcpy(T_n.values, T_local.values, nodes * sizeof(double));
+            }
+        }
+
+        free(T_local.values);
+        free(a.values); free(b.values); free(c.values); free(d.values);
+    }
+
+    free(T_n.values);
+    return T_nh;
+}
+
+
+// Access helper function
+double matrix_at(const FlatMatrix* mat, int row, int col) {
+    return mat->data[row * mat->cols + col];
+}
+
+// Set helper function
+void matrix_set(FlatMatrix* mat, int row, int col, double value) {
+    mat->data[row * mat->cols + col] = value;
+}
+
+void free_flat_matrix(FlatMatrix* mat) {
+    if (mat) {
+        free(mat->data);  // Free the single block of memory
+        mat->data = NULL; // Optional: Prevent dangling pointer
+        mat->rows = 0;
+        mat->cols = 0;
+    }
+}
+
 NumericArray calculate_qi_vec(const NumericArray* Tsi_vec,
     double h_i) 
 {
     // Initialize empty result
-    NumericArray result = {NULL, NULL, 0};
+    //NumericArray result = {NULL, NULL, 0};
+    NumericArray result = {NULL, 0};
 
     // Validate input
     if (!Tsi_vec || !Tsi_vec->values) {
@@ -1456,19 +1826,19 @@ NumericArray calculate_qi_vec(const NumericArray* Tsi_vec,
 
     // Allocate memory
     result.values = malloc(length * sizeof(double));
-    result.is_valid = malloc(length * sizeof(bool));
-    if (!result.values || !result.is_valid) {
-        free(result.values);
-        free(result.is_valid);
-        fprintf(stderr, "Error: Memory allocation failed\n");
-        return result;
-    }
+    //result.is_valid = malloc(length * sizeof(bool));
+    //if (!result.values || !result.is_valid) {
+    //    free(result.values);
+    //    free(result.is_valid);
+    //    fprintf(stderr, "Error: Memory allocation failed\n");
+    //    return result;
+    //}
     result.length = length;
 
     // Calculate ho values
     for (int i = 0; i < length; i++) {
         result.values[i] = Tsi_vec->values[i] * h_i;
-        result.is_valid[i] = Tsi_vec->is_valid[i];
+        //result.is_valid[i] = Tsi_vec->is_valid[i];
     }
 
     return result;
@@ -1479,7 +1849,8 @@ NumericArray calculate_hfmr_cs_vec(const NumericArray* air_temp_vec,
     double rho_snow) 
 {
     // Initialize empty result
-    NumericArray result = {NULL, NULL, 0};
+    //NumericArray result = {NULL, NULL, 0};
+    NumericArray result = {NULL, 0};
 
     // Validate input
     //if (!Tsi_vec || !Tsi_vec->values) {
@@ -1491,28 +1862,30 @@ NumericArray calculate_hfmr_cs_vec(const NumericArray* air_temp_vec,
 
     // Allocate memory
     result.values = calloc(length, sizeof(double));
-    result.is_valid = malloc(length * sizeof(bool));
-    if (!result.values || !result.is_valid) {
-        free(result.values);
-        free(result.is_valid);
-        fprintf(stderr, "Error: Memory allocation failed\n");
-        return result;
-    }
+    //result.is_valid = malloc(length * sizeof(bool));
+    //if (!result.values || !result.is_valid) {
+    //    free(result.values);
+    //    free(result.is_valid);
+    //    fprintf(stderr, "Error: Memory allocation failed\n");
+    //    return result;
+    //}
     result.length = length;
 
     // 1. Calculate hourly melt rate from solar heat flux
     for (int i = 0; i < length; i++) {
-        result.is_valid[i] = hrly_v_pc_vec->is_valid[i];
+        //result.is_valid[i] = hrly_v_pc_vec->is_valid[i];
 
         if (air_temp_vec->values[i] > 0 ){
             result.values[i] = hrly_v_pc_vec->values[i] * rho_snow;
         }
     }
 
-    // 2. Cumulative sum
-    result = cumsum(&result);
+    // 2. Compute cumulative sum (and free the old memory)
+    NumericArray cum_result = cumsum(&result);
+    free(result.values); // Free the original array to avoid leak
+    return cum_result;   // Return the new array
 
-    return result;
+    //return result;
 }
 
 NumericArray calculate_qo_vec(const NumericArray* T_sol_air_vec,
@@ -1520,7 +1893,8 @@ NumericArray calculate_qo_vec(const NumericArray* T_sol_air_vec,
     const NumericArray* ho_vec) 
 {
     // Initialize empty result
-    NumericArray result = {NULL, NULL, 0};
+    //NumericArray result = {NULL, NULL, 0};
+    NumericArray result = {NULL, 0};
 
     // Validate input
     //if (!Tsi_vec || !Tsi_vec->values) {
@@ -1532,20 +1906,20 @@ NumericArray calculate_qo_vec(const NumericArray* T_sol_air_vec,
 
     // Allocate memory
     result.values = malloc(length * sizeof(double));
-    result.is_valid = malloc(length * sizeof(bool));
-    if (!result.values || !result.is_valid) {
-        free(result.values);
-        free(result.is_valid);
-        fprintf(stderr, "Error: Memory allocation failed\n");
-        return result;
-    }
+    //result.is_valid = malloc(length * sizeof(bool));
+    //if (!result.values || !result.is_valid) {
+    //    free(result.values);
+    //    free(result.is_valid);
+    //    fprintf(stderr, "Error: Memory allocation failed\n");
+    //    return result;
+    //}
     result.length = length;
 
     // Calculate ho values
     for (int i = 0; i < length; i++) {
         result.values[i] = (T_sol_air_vec->values[i] - Tso_vec->values[i]) * ho_vec->values[i];
-        result.is_valid[i] = T_sol_air_vec->is_valid[i] && Tso_vec->is_valid[i]
-                            && ho_vec->is_valid[i];
+        //result.is_valid[i] = T_sol_air_vec->is_valid[i] && Tso_vec->is_valid[i]
+        //                    && ho_vec->is_valid[i];
     }
 
     return result;
@@ -1556,7 +1930,8 @@ NumericArray calculate_hrly_v_pc_vec(const NumericArray* qi_vec,
     double rho_snow) 
 {
     // Initialize empty result
-    NumericArray result = {NULL, NULL, 0};
+    //NumericArray result = {NULL, NULL, 0};
+    NumericArray result = {NULL, 0};
 
     // Validate input
     //if (!Tsi_vec || !Tsi_vec->values) {
@@ -1568,13 +1943,13 @@ NumericArray calculate_hrly_v_pc_vec(const NumericArray* qi_vec,
 
     // Allocate memory
     result.values = malloc(length * sizeof(double));
-    result.is_valid = malloc(length * sizeof(bool));
-    if (!result.values || !result.is_valid) {
-        free(result.values);
-        free(result.is_valid);
-        fprintf(stderr, "Error: Memory allocation failed\n");
-        return result;
-    }
+    //result.is_valid = malloc(length * sizeof(bool));
+    //if (!result.values || !result.is_valid) {
+    //    free(result.values);
+    //    free(result.is_valid);
+    //    fprintf(stderr, "Error: Memory allocation failed\n");
+    //    return result;
+    //}
     result.length = length;
 
     // Pre-calculate the constant factor
@@ -1583,7 +1958,7 @@ NumericArray calculate_hrly_v_pc_vec(const NumericArray* qi_vec,
     // Calculate ho values
     for (int i = 0; i < length; i++) {
         result.values[i] = qi_vec->values[i] * phase_change_coeff;
-        result.is_valid[i] = qi_vec->is_valid[i];
+        //result.is_valid[i] = qi_vec->is_valid[i];
     }
 
     return result;
@@ -1594,7 +1969,8 @@ NumericArray calculate_rain_solar_hf_vec(const NumericArray* q_rain_vec,
     const NumericArray* qo_vec) 
 {
     // Initialize empty result
-    NumericArray result = {NULL, NULL, 0};
+    //NumericArray result = {NULL, NULL, 0};
+    NumericArray result = {NULL, 0};
 
     // Validate input
     //if (!Tsi_vec || !Tsi_vec->values) {
@@ -1606,19 +1982,19 @@ NumericArray calculate_rain_solar_hf_vec(const NumericArray* q_rain_vec,
 
     // Allocate memory
     result.values = malloc(length * sizeof(double));
-    result.is_valid = malloc(length * sizeof(bool));
-    if (!result.values || !result.is_valid) {
-        free(result.values);
-        free(result.is_valid);
-        fprintf(stderr, "Error: Memory allocation failed\n");
-        return result;
-    }
+    //result.is_valid = malloc(length * sizeof(bool));
+    //if (!result.values || !result.is_valid) {
+    //    free(result.values);
+    //    free(result.is_valid);
+    //    fprintf(stderr, "Error: Memory allocation failed\n");
+    //    return result;
+    //}
     result.length = length;
 
     // Calculate ho values
     for (int i = 0; i < length; i++) {
         result.values[i] = (q_rain_vec->values[i] + qo_vec->values[i]);
-        result.is_valid[i] = q_rain_vec->is_valid[i] && qo_vec->is_valid[i];
+        //result.is_valid[i] = q_rain_vec->is_valid[i] && qo_vec->is_valid[i];
     }
 
     return result;
@@ -1629,7 +2005,8 @@ NumericArray calculate_wind_solar_rain_vec(const NumericArray* rain_solar_hf_vec
     const NumericArray* Tso_vec) 
 {
     // Initialize empty result
-    NumericArray result = {NULL, NULL, 0};
+    //NumericArray result = {NULL, NULL, 0};
+    NumericArray result = {NULL, 0};
 
     // Validate input
     //if (!Tsi_vec || !Tsi_vec->values) {
@@ -1641,21 +2018,21 @@ NumericArray calculate_wind_solar_rain_vec(const NumericArray* rain_solar_hf_vec
 
     // Allocate memory
     result.values = malloc(length * sizeof(double));
-    result.is_valid = malloc(length * sizeof(bool));
-    if (!result.values || !result.is_valid) {
-        free(result.values);
-        free(result.is_valid);
-        fprintf(stderr, "Error: Memory allocation failed\n");
-        return result;
-    }
+    //result.is_valid = malloc(length * sizeof(bool));
+    //if (!result.values || !result.is_valid) {
+    //    free(result.values);
+    //    free(result.is_valid);
+    //    fprintf(stderr, "Error: Memory allocation failed\n");
+    //    return result;
+    //}
     result.length = length;
 
     // Calculate ho values
     for (int i = 0; i < length; i++) {
         result.values[i] = rain_solar_hf_vec->values[i] /
             (T_sol_air_vec->values[i]-Tso_vec->values[i]) ;
-        result.is_valid[i] = rain_solar_hf_vec->is_valid[i] && 
-                T_sol_air_vec->is_valid[i] && Tso_vec->is_valid[i];
+        //result.is_valid[i] = rain_solar_hf_vec->is_valid[i] && 
+        //        T_sol_air_vec->is_valid[i] && Tso_vec->is_valid[i];
     }
 
     return result;
@@ -1756,7 +2133,7 @@ int main() {
     double alpha = 0.8; // Solar light absorptivity
     double T_cor_fact = 4.0; // °C //Correction factor for horizontal surface
 
-    NumericArray T_sol_air_vec = calculate_solar_air_temp_simple(
+    NumericArray T_sol_air_vec = calculate_solar_air_temp(
         &glob_solir_vec, 
         &air_temp_vec,
         alpha, h, T_cor_fact
@@ -1867,9 +2244,16 @@ int main() {
     }
 
     // Run simulation
-    Matrix t_o_range = transient1D(&t_o, &h_o, d_ins, lam_i, D, 0.005, 10.0, h_i);
-    //Matrix t_o_range = transient1D_gsl(&t_o, &h_o, d_ins, lam_i, D, 0.005, 10.0, h_i);
-    //Matrix t_o_range = transient1D_parallel(&t_o, &h_o, d_ins, lam_i, D, 0.005, 10.0, h_i);
+    //Matrix t_o_range = transient1D(&t_o, &h_o, d_ins, lam_i, D, 0.005, 10.0, h_i);
+    //FlatMatrix t_o_range = transient1D_flat(&t_o, &h_o, d_ins, lam_i, D, 0.005, 10.0, h_i); // Most accurate but slowest
+
+    printf("\n# RESULTS MAY DIFFER BY <0.0001%% FROM SERIAL DUE TO FLOATING-POINT NON-ASSOCIATIVITY\n");
+    printf("# PHYSICAL QUANTITIES PRESERVED: ENERGY BALANCE, TEMPORAL CONSISTENCY");
+    // Current best and fastest
+    FlatMatrix t_o_range = transient1D_parallel_correct(&t_o, &h_o, d_ins, lam_i, D, 0.005, 10.0, h_i); 
+    
+    // Choose either Thread-local approach or Kahan
+    //FlatMatrix t_o_range = transient1D_parallel(&t_o, &h_o, d_ins, lam_i, D, 0.005, 10.0, h_i); 
 
 
     printf("\nRows: %d\nCols: %d\n", t_o_range.rows, t_o_range.cols);
@@ -1877,29 +2261,34 @@ int main() {
     printf("Temperature distribution:\n");
     for (int h = 0; h < 5; h++){
         printf("Hour %d: Inner Temp = %.4e, Outer Temp = %.4e\n", 
-            h+1, t_o_range.data[t_o_range.rows-1][h], t_o_range.data[0][h]);
+            //h+1, t_o_range.data[t_o_range.rows-1][h], t_o_range.data[0][h]);
+            h+1, matrix_at(&t_o_range, t_o_range.rows-1, h), matrix_at(&t_o_range, 0, h));
     }
     printf("\t...\n");
     for (int h = t_o_range.cols-5; h < t_o_range.cols; h++){
         printf("Hour %d: Inner Temp = %.4e, Outer Temp = %.4e\n", 
-            h+1, t_o_range.data[t_o_range.rows-1][h], t_o_range.data[0][h]);
+            //h+1, t_o_range.data[t_o_range.rows-1][h], t_o_range.data[0][h]);
+            h+1, matrix_at(&t_o_range, t_o_range.rows-1, h), matrix_at(&t_o_range, 0, h));
     }
 
     NumericArray Tsi_vec;
     Tsi_vec.values = malloc(t_o_range.cols * sizeof(double));
-    Tsi_vec.is_valid = malloc(t_o_range.cols * sizeof(bool));
+    //Tsi_vec.is_valid = malloc(t_o_range.cols * sizeof(bool));
     Tsi_vec.length = t_o_range.cols;
 
     NumericArray Tso_vec;
     Tso_vec.values = malloc(t_o_range.cols * sizeof(double));
-    Tso_vec.is_valid = malloc(t_o_range.cols * sizeof(bool));
+    //Tso_vec.is_valid = malloc(t_o_range.cols * sizeof(bool));
     Tso_vec.length = t_o_range.cols;
 
     for (int i = 0; i < t_o_range.cols; i++) {
-        Tsi_vec.values[i] = t_o_range.data[t_o_range.rows-1][i];
-        Tso_vec.values[i] = t_o_range.data[0][i];
-        Tsi_vec.is_valid[i] = true;
-        Tso_vec.is_valid[i] = true;
+        //Tsi_vec.values[i] = t_o_range.data[t_o_range.rows-1][i];
+        //Tso_vec.values[i] = t_o_range.data[0][i];
+        Tsi_vec.values[i] = matrix_at(&t_o_range, t_o_range.rows-1, i);
+        Tso_vec.values[i] = matrix_at(&t_o_range, 0, i);
+
+        //Tsi_vec.is_valid[i] = true;
+        //Tso_vec.is_valid[i] = true;
     }
 
     print_numeric_array(&Tsi_vec, "Inner layer temperatures (Celsius)");
@@ -1908,8 +2297,8 @@ int main() {
     // Cleanup
     free(t_o.values);
     free(h_o.values);
-    free_matrix(&t_o_range);
-
+    //free_matrix(&t_o_range);
+    free_flat_matrix(&t_o_range);
     //------------------------------------------------------------------------------------
 
     NumericArray qi_vec = calculate_qi_vec(&Tsi_vec, h_i);
@@ -1928,18 +2317,18 @@ int main() {
     //------------------------------------------------------------------------------------
 
     NumericArray hfmr_vec = calculate_hfmr_cs_vec(&air_temp_vec, &hrly_v_pc_vec, rho_snow);
-    print_numeric_array(&hfmr_vec, "Hourly melt rate from solar heat flux");
+    print_numeric_array(&hfmr_vec, "Cumulative hourly melt rate from solar heat flux");
 
     //------------------------------------------------------------------------------------
 
     NumericArray rain_solar_hf_vec = calculate_rain_solar_hf_vec(&q_rain_vec, &qo_vec); 
-    print_numeric_array(&rain_solar_hf_vec, "Hourly melt rate from solar heat flux");
+    print_numeric_array(&rain_solar_hf_vec, "Heat flux from rain and sun (W/m^2)");
 
     //------------------------------------------------------------------------------------
 
     NumericArray wind_solar_rain_vec  = calculate_wind_solar_rain_vec(&rain_solar_hf_vec, 
                                                                 &T_sol_air_vec, &Tso_vec); 
-    print_numeric_array(&wind_solar_rain_vec , "Hourly melt rate from solar heat flux");
+    print_numeric_array(&wind_solar_rain_vec , "Heat flux from wind, solar and rain (W/m^2)");
 
     // Cleanup
     free_string_array(&air_temp_raw);
@@ -2418,5 +2807,39 @@ Matrix transient1D_gsl(const Vector* t_o, const Vector* h_o,
     free(T_n.values);
 
     return T_nh;
+}
+*/
+
+/*
+int find_index_parallel(CSVData* data, int column_index, const char* value) {
+    if (!data || column_index < 0 || column_index >= data->cols_kept) {
+        return -1;
+    }
+    
+    int found_index = -1;
+    
+    #pragma omp parallel
+    {
+        #pragma omp for
+        for (int i = 0; i < data->rows; i++) {
+            // Skip if already found by another thread
+            if (found_index != -1) continue;
+            
+            if (strcmp(data->data[i][column_index], value) == 0) {
+                #pragma omp critical
+                {
+                    // Only update if this is the first occurrence found
+                    if (found_index == -1 || i < found_index) {
+                        found_index = i;
+                    }
+                }
+                
+                // Optional: Break out of the loop
+                #pragma omp cancel for
+            }
+        }
+    }
+    
+    return found_index;
 }
 */
