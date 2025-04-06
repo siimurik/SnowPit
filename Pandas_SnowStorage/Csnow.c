@@ -1,6 +1,6 @@
 /*
-    gcc -O3 -fopenmp -march=native -ffast-math test.c -o parallel -lm
-    gcc -O3 -fopenmp -mfpmath=387 -ffloat-store test.c -o kahan -lm
+    gcc -O3 -fopenmp -march=native -ffast-math Csnow.c -o parallel -lm
+    gcc -O3 -fopenmp -mfpmath=387 -ffloat-store Csnow.c -o kahan -lm
     gcc -Wall -Wextra -Werror Csnow.c -o lumi -lm -fopenmp
     
     # For benchmarking
