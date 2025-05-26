@@ -276,6 +276,56 @@ def transient1D(t_o, h_o, d_ins, lam_i, D, dx=0.005, dt=10.0, h_i=99.75):
 
     return T_nh
 
+def export_large_matrix(vectors, filename, value_delimiter=' ', vector_delimiter='\n', buffer_size=1000):
+    """
+    Efficiently exports large vectors as a matrix to a file (PyPy compatible).
+    
+    Args:
+        vectors (list of lists): Matrix where each inner list is a row vector
+        filename (str): Output file path
+        value_delimiter (str): Separator between values in a row (default: space)
+        vector_delimiter (str): Separator between rows (default: newline)
+        buffer_size (int): Number of rows to write at once (memory optimization)
+        
+    Returns:
+        bool: True if successful, False if error occurred
+    """
+    try:
+        with open(filename, 'w') as f:
+            # Process vectors in chunks to avoid high memory usage
+            for i in range(0, len(vectors), buffer_size):
+                chunk = vectors[i:i+buffer_size]
+                
+                # Build chunk content
+                chunk_content = []
+                for vector in chunk:
+                    if len(vector) != len(vectors[0]):
+                        raise ValueError(f"All vectors must have same length. Expected {len(vectors[0])}, got {len(vector)}")
+                    
+                    # Efficient string joining for large vectors
+                    row = value_delimiter.join(str(x) for x in vector)
+                    chunk_content.append(row)
+                
+                # Write chunk with proper delimiters
+                chunk_str = vector_delimiter.join(chunk_content)
+                f.write(chunk_str)
+                
+                # Add delimiter between chunks if needed
+                if i + buffer_size < len(vectors):
+                    f.write(vector_delimiter)
+        
+        return True
+    
+    except (IOError, OSError) as e:
+        print(f"File error: {e}")
+        return False
+    except ValueError as e:
+        print(f"Data consistency error: {e}")
+        return False
+    except Exception as e:
+        print(f"Unexpected error: {e}")
+        return False
+
 def main():
     # Detect the encoding of the file
     with open('Snow_Storage_Data.csv', 'rb') as rawdata:
@@ -330,29 +380,29 @@ def main():
     #for row in data[period_start_in:period_end_in]:
     #    print(row[7])
 
-    printVec(time_column)
+    #printVec(time_column)
     rdata = data[period_start_in:period_end_in+1] # rdata - "ranged data"
-    printAny(rdata, column_name="All data")
+    #printAny(rdata, column_name="All data")
 
     # Get air temperature data and assign it to a vector
     air_temp_vec_raw = [row[7] for row in rdata]
     air_temp_vec = convert_to_type(air_temp_vec_raw, dtype=float)
-    printVec(air_temp_vec, column_name="Air temperature (Celsius)")
+    #printVec(air_temp_vec, column_name="Air temperature (Celsius)")
 
     # Get air velocity data and assign it to a vector
     air_vel_vec_raw = [row[15] for row in rdata]
     air_vel_vec = convert_to_type(air_vel_vec_raw, dtype=float)
-    printVec(air_vel_vec, column_name="Air velocity (m/s)")
+    #printVec(air_vel_vec, column_name="Air velocity (m/s)")
 
     # Extract the amount of precipitation column from the data
     prec_vec_raw = [row[5] for row in rdata]
     prec_vec = convert_to_type(prec_vec_raw, dtype=float)
-    printVec(prec_vec, column_name="Precipitation (m/h)")
+    #printVec(prec_vec, column_name="Precipitation (m/h)")
 
     # Extract the global solar irradiance (W/m2) column from the data
     glob_solir_vec_raw = [row[12] for row in rdata]
     glob_solir_vec = convert_to_type(glob_solir_vec_raw, dtype=float)
-    printVec(glob_solir_vec, column_name="Global solar irradiance (W/m2)")
+    #printVec(glob_solir_vec, column_name="Global solar irradiance (W/m2)")
 
     #------------------------------------------------------------------------
 
@@ -374,7 +424,7 @@ def main():
         for glob_solir, air_temp in 
         zip(glob_solir_vec, air_temp_vec)
     ]
-    printVec(T_sol_air_vec, column_name="Solar-Air (Celsius)")
+    #printVec(T_sol_air_vec, column_name="Solar-Air (Celsius)")
 
     #------------------------------------------------------------------------
 
@@ -395,7 +445,7 @@ def main():
         A_surf * lam_i / d_ins * (T_sol_air - 0.0)
         for T_sol_air in T_sol_air_vec
     ]
-    printVec(Q_surf_vec, column_name="Surface power (W)")
+    #printVec(Q_surf_vec, column_name="Surface power (W)")
 
     #------------------------------------------------------------------------
 
@@ -408,7 +458,7 @@ def main():
     #    f_srf_melt_vec.append(Q_surf_vec[i]/(L_f * rho_snow)) # m^3/s
 
     f_srf_melt_vec = [Q_surf / (L_f*rho_snow) for Q_surf in Q_surf_vec]
-    printVec(f_srf_melt_vec, column_name="Surface melt rate (m^3/s)") 
+    #printVec(f_srf_melt_vec, column_name="Surface melt rate (m^3/s)") 
 
     #------------------------------------------------------------------------
 
@@ -418,7 +468,7 @@ def main():
     #    hrly_srf_total_vec.append(f_srf_melt_vec[i] * 3600.0) # m^3/h
 
     hrly_srf_total_vec = [f_srf_melt*3600.0 for f_srf_melt in f_srf_melt_vec]
-    printVec(hrly_srf_total_vec, column_name="Hourly total SMR (m^3/h)")
+    #printVec(hrly_srf_total_vec, column_name="Hourly total SMR (m^3/h)")
 
     #------------------------------------------------------------------------
 
@@ -453,7 +503,7 @@ def main():
 
     # Display results
     #print(pos_temp_mark[:5])
-    printVec(q_rain_vec, column_name="Hourly q rain (W/m^2)")
+    #printVec(q_rain_vec, column_name="Hourly q rain (W/m^2)")
 
     #------------------------------------------------------------------------
 
@@ -464,7 +514,7 @@ def main():
     
     v_rain_vec = [prec * A_surf * rho_water * c_water * air_temp / (L_f * rho_snow)
                   for prec, air_temp in zip(prec_vec, air_temp_vec)]
-    printVec(v_rain_vec, column_name="Hourly melt rate from rain (m^3/h)")
+    #printVec(v_rain_vec, column_name="Hourly melt rate from rain (m^3/h)")
 
     #------------------------------------------------------------------------
 
@@ -479,7 +529,7 @@ def main():
         hrly_srf_total*rho_snow/A_surf if air_temp > 0.0 else 0.0
         for hrly_srf_total, air_temp in zip(hrly_srf_total_vec, air_temp_vec)
     ]
-    printVec(SMR_temp_vec, column_name="SMR due to T")
+    #printVec(SMR_temp_vec, column_name="SMR due to T")
 
     #------------------------------------------------------------------------
 
@@ -493,7 +543,7 @@ def main():
         v_rain * rho_snow / A_surf
         for v_rain in v_rain_vec
     ]
-    printVec(SMR_rain_vec, column_name="SMR due to rain (m^3/h)")
+    #printVec(SMR_rain_vec, column_name="SMR due to rain (m^3/h)")
 
     #------------------------------------------------------------------------
 
@@ -507,13 +557,13 @@ def main():
         SMR_temp + SMR_rain for SMR_temp, SMR_rain 
         in zip(SMR_temp_vec, SMR_rain_vec) 
     ]
-    printVec(SMR_total_vec, column_name="Combined total SMR (m^3/h)")
+    #printVec(SMR_total_vec, column_name="Combined total SMR (m^3/h)")
 
     #------------------------------------------------------------------------
 
     # Cumulative sum of the SMR with rain together with temperature
     SMR_rainT_vec = cumsum(SMR_total_vec)
-    printVec(SMR_rainT_vec, column_name="Rain and T cumulative (m^3/h)")
+    #printVec(SMR_rainT_vec, column_name="Rain and T cumulative (m^3/h)")
 
     #------------------------------------------------------------------------
 
@@ -527,38 +577,38 @@ def main():
         -0.09 + 0.00014*glob_solir + 0.0575*air_temp + 0.0012*air_temp*air_vel - 0.18*air_temp*d_ins
         for glob_solir, air_temp, air_vel in zip(glob_solir_vec, air_temp_vec, air_vel_vec)
     ]
-    printVec(emp1_SMR_vec, column_name="Empirical 1")
+    #printVec(emp1_SMR_vec, column_name="Empirical 1")
 
     #------------------------------------------------------------------------
 
     Psat_vec = []
     for i in range(len(air_temp_vec)):
         Psat_vec.append(Psat_WV(air_temp_vec[i] + 273.15)/10.0) # hPa; 100/1000 to convert to hPa
-    printVec(Psat_vec, column_name=" Water vapour saturation pressure (hPa)")
+    #printVec(Psat_vec, column_name=" Water vapour saturation pressure (hPa)")
 
     # Extract the amount of RH precipitation column from the data
     RH_perc_vec_raw = [row[17] for row in rdata]
     RH_perc_vec = convert_to_type(RH_perc_vec_raw, dtype=float)
-    printVec(RH_perc_vec, column_name="Relative Humidity Precipitation (m/h)")
+    #printVec(RH_perc_vec, column_name="Relative Humidity Precipitation (m/h)")
 
     # Water steam pressure
     Pw_vec = []
     for i in range(len(RH_perc_vec)):
         Pw_vec.append(Psat_vec[i]*RH_perc_vec[i]/100.0) # kPa
-    printVec(Pw_vec, column_name = "Water steam pressure (kPa)")
+    #printVec(Pw_vec, column_name = "Water steam pressure (kPa)")
 
     # Absolute humidity
     w_vec = []
     for i in range(len(Pw_vec)):
         w_vec.append(2.16679*Pw_vec[i]*1000/(273.15+air_temp_vec[i])) # kPa; 1000 to convert to kPa
-    printVec(w_vec, column_name="Absolute humidity (kPa)")
+    #printVec(w_vec, column_name="Absolute humidity (kPa)")
 
     # Surface melt rate from insulation thickness, air velocity, light intensity, air temperature and air humidity
     emp2_SMR_vec = []
     for i in range(len(air_temp_vec)):
         emp2_SMR_vec.append(- 0.97 - 0.097*(d_ins*100) + 0.164*air_vel_vec[i] + 0.00175*glob_solir_vec[i] 
                             + 0.102*air_temp_vec[i] + 0.192*w_vec[i]) # kg/m2/h
-    printVec(emp2_SMR_vec, column_name="Empirical 2")
+    #printVec(emp2_SMR_vec, column_name="Empirical 2")
 
     # Create a vector for emp1_SMR with condition ('wc')
     # This vector sets values to 0 if either the SMR or air temperature is below 0,
@@ -567,7 +617,7 @@ def main():
         0.0 if (smr < 0 or air_temp < 0) else smr 
         for smr, air_temp in zip(emp1_SMR_vec, air_temp_vec)
     ]
-    printVec(emp1_SMR_wc_vec, column_name="Empirical 1 (pos. cond)")
+    #printVec(emp1_SMR_wc_vec, column_name="Empirical 1 (pos. cond)")
 
     # Create a vector for emp2_SMR_vec with condition ('cond')
     # This vector sets values to 0 if either the SMR or air temperature is below 0,
@@ -576,18 +626,18 @@ def main():
         0.0 if (smr < 0 or air_temp < 0) else smr 
         for smr, air_temp in zip(emp2_SMR_vec, air_temp_vec)
     ]
-    printVec(emp2_SMR_wc_vec, column_name="Empirical 2 (pos. cond)")
+    #printVec(emp2_SMR_wc_vec, column_name="Empirical 2 (pos. cond)")
 
     # Cumulative sum of pos. empirical methods
     emp1_SMR_wc_cs_vec = cumsum(emp1_SMR_wc_vec) # 'cs' - Cumulative Sum
-    printVec(emp1_SMR_wc_cs_vec, column_name="Cumulative sum - Emp 1")
+    #printVec(emp1_SMR_wc_cs_vec, column_name="Cumulative sum - Emp 1")
     emp2_SMR_wc_cs_vec = cumsum(emp2_SMR_wc_vec) # 'cs' - Cumulative Sum
-    printVec(emp2_SMR_wc_cs_vec, column_name="Cumulative sum - Emp 2")
+    #printVec(emp2_SMR_wc_cs_vec, column_name="Cumulative sum - Emp 2")
 
     # Reading in new data
     file_path = 'Tsi_Tso_Data.csv'
     data2 = read_csv_with_encoding(file_path)  # This will read all columns by default
-    printAny(data2)
+    #printAny(data2)
 
     # If you want to keep specific columns
     #columns_to_keep = list(range(1))  # Define the indices of the columns you want to keep
@@ -597,17 +647,17 @@ def main():
     Tsi_vec_raw = [row[0] for row in data2[1:]] # data2[1:] - exclude first row which contains the name
     #printAny(Tsi_vec_raw)
     Tsi_vec = convert_to_type(Tsi_vec_raw, dtype=float)
-    printVec(Tsi_vec, column_name="Tsi (Celsius)")
+    #printVec(Tsi_vec, column_name="Tsi (Celsius)")
 
     Tso_vec_raw = [row[1] for row in data2[1:]] # data2[1:] - exclude first row which contains the name
     Tso_vec = convert_to_type(Tso_vec_raw, dtype=float)
-    printVec(Tso_vec, column_name="Tso (Celsius)")
+    #printVec(Tso_vec, column_name="Tso (Celsius)")
 
     ho_vec = [
         6.0 + 4.0*vel if vel <= 5.0 else 7.41*(vel**0.78)
         for vel in air_vel_vec
     ]
-    printVec(ho_vec, column_name="# Air velocity (with cond)")
+    #printVec(ho_vec, column_name="# Air velocity (with cond)")
 
     # More constants for transient 1D solver
     h_i = 99.75  # W/m^2*K
@@ -619,14 +669,23 @@ def main():
     c_water = 4.19E03 # J/(kg * K)
 
     c_wet = (1.0 - moist_cont/100.0)*c_dry + moist_cont/100.0*c_water
-    print(f"Specific heat capacity (wet): {c_wet/1000.0:.4} kJ/(kg*K).")
+    #print(f"Specific heat capacity (wet): {c_wet/1000.0:.4} kJ/(kg*K).")
 
     D = lam_i/(c_wet * rho_wet) # m^2/s
-    print(f"Thermal diffusivity of the insulating material is {D:.4e} m^2/s.\n")
+    #print(f"Thermal diffusivity of the insulating material is {D:.4e} m^2/s.\n")
 
     # Snow outer and inner layer temperatures
     t_o = T_sol_air_vec
     h_o = ho_vec
+
+    printVec(t_o)
+
+    # Create matrix by pairing corresponding elements
+    export_matrix = [[t, h] for t, h in zip(t_o, h_o)] # column format 
+
+    # Export with tab separation (good for columnar data)
+    export_large_matrix(export_matrix, "t_o_and_h_o.csv", value_delimiter=",")
+    #export_large_matrix(export_matrix, "t_o_and_h_o.tsv", value_delimiter="\t")
 
     t_o_range = transient1D(t_o, h_o, d_ins, lam_i, D, dx=0.005, dt=10.0, h_i=h_i)
     #print(len(t_o_range[0]))
@@ -647,23 +706,23 @@ def main():
     qi_vec = []
     for i in range(len(Tsi_vec)):
         qi_vec.append((Tsi_vec[i] - 0.0)*h_i) # W/m^2
-    printVec(qi_vec, column_name="Heat flux in (W/m^2)")
+    #printVec(qi_vec, column_name="Heat flux in (W/m^2)")
 
     # Heat flux out
     qo_vec = []
     for i in range(len(T_sol_air_vec)):
         qo_vec.append((T_sol_air_vec[i] - Tso_vec[i]) * ho_vec[i]) # W/m^2
-    printVec(qo_vec, column_name="Heat flux out (W/m^2)")
+    #printVec(qo_vec, column_name="Heat flux out (W/m^2)")
 
     v_pc_vec = []
     for i in range(len(qi_vec)):
         v_pc_vec.append(qi_vec[i]/(L_f * rho_snow)) # m^3/(m^2*s)
-    printVec(v_pc_vec, column_name="Speed of phase change (m^3/(m^2*s))")
+    #printVec(v_pc_vec, column_name="Speed of phase change (m^3/(m^2*s))")
 
     v_pc_hourly_vec = []
     for i in range(len(v_pc_vec)):
         v_pc_hourly_vec.append(v_pc_vec[i] * 3600.0)  # m/h
-    printVec(v_pc_hourly_vec, column_name="Hourly speed of phase change (m^3/(m^2*h))")
+    #printVec(v_pc_hourly_vec, column_name="Hourly speed of phase change (m^3/(m^2*h))")
 
     # Calculate hourly melt rate from solar heat flux
     #df_hfmr = pd.Series(np.where(df_air_temp > 0,  df_v_pc_hourly * rho_snow, 0.0))
@@ -671,22 +730,22 @@ def main():
         v_pc_hourly * rho_snow if air_temp > 0 else 0.0
         for air_temp, v_pc_hourly in zip(air_temp_vec, v_pc_hourly_vec)
     ]
-    printVec(hfmr_vec, column_name="Hourly melt rate from solar heat flux")
+    #printVec(hfmr_vec, column_name="Hourly melt rate from solar heat flux")
 
     hfmr_cumsum_vec = cumsum(hfmr_vec)
-    printVec(hfmr_cumsum_vec, column_name="Cumulative hourly melt rate from solar heat flux")
+    #printVec(hfmr_cumsum_vec, column_name="Cumulative hourly melt rate from solar heat flux")
 
     #rain_solar_hf_vec = []
     #for i in range(len(qo_vec)):
     #    rain_solar_hf_vec.append(q_rain_vec[i] + qo_vec[i]) # W/m^2
     rain_solar_hf_vec = [q_rain + qo for q_rain, qo in zip(q_rain_vec, qo_vec)]
-    printVec(rain_solar_hf_vec, column_name="Heat flux from rain and sun (W/m^2)")
+    #printVec(rain_solar_hf_vec, column_name="Heat flux from rain and sun (W/m^2)")
 
     #wind_solar_rain_vec = []
     #for i in range(len(rain_solar_hf_vec)):
     #    wind_solar_rain_vec.append(rain_solar_hf_vec[i] / (T_sol_air_vec[i]-Tso_vec[i]))
     wind_solar_rain_vec = [rain_solar_hf/(T_sol_air-Tso) for rain_solar_hf, T_sol_air, Tso in zip(rain_solar_hf_vec, T_sol_air_vec, Tso_vec)]
-    printVec(wind_solar_rain_vec, column_name="Heat flux from wind, solar and rain (W/m^2)")
+    #printVec(wind_solar_rain_vec, column_name="Heat flux from wind, solar and rain (W/m^2)")
 
 # End of main() section
 
