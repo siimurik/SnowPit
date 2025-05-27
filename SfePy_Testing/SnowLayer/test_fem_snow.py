@@ -49,6 +49,30 @@ total_time = hours_to_simulate * 3600  # 10 hours in seconds
 n_step = hours_to_simulate * nh  # Only timesteps for 10 hours
 
 
+def step_hook(pb, ts, variables):
+    """
+    Extract temperature at the leftmost and rightmost nodes and store it.
+    """
+    T_field = pb.get_variables()['T']
+    coors = pb.fields['temperature'].get_coor()
+
+    num_nodes = coors.shape[0]  # Get number of nodes in mesh
+    print(f"Mesh contains {num_nodes} nodes.")  # Debugging
+
+    left_index = 0  # Always first node
+    right_index = num_nodes - 1  # Last valid node
+
+    T_left = T_field.data[left_index]  # Bottom layer temperature
+    T_right = T_field.data[right_index]  # Top layer temperature
+
+    filename = "temperature_probe.csv"
+    with open(filename, mode='a', newline='') as file:
+        writer = csv.writer(file)
+        writer.writerow([ts.time, T_left, T_right])
+
+    print(f"Saved timestep {ts.time:.2f}s: Bottom Temp = {T_left}, Top Temp = {T_right}")
+
+
 def mesh_hook(mesh, mode):
     """Generate the 1D mesh."""
     if mode == 'read':
@@ -157,6 +181,7 @@ solvers = {
 }
 
 options = {
+    'step_hook': 'step_hook',  # Calls the function at every timestep
     'nls': 'newton',
     'ls': 'ls',
     'ts': 'ts',
