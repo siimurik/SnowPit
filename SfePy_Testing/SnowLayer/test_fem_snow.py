@@ -6,6 +6,7 @@ import numpy as nm
 from sfepy.discrete.fem import Mesh
 from sfepy.discrete.fem.meshio import UserMeshIO
 import csv
+import os
 
 # Physical parameters
 d_ins = 0.1       # Insulation thickness [m]
@@ -40,38 +41,16 @@ t_o, h_o = read_temp_and_hcoeff_from_csv()
 nr_hour = len(t_o)  # Number of hours
 
 # Time parameters
-dt = 10.0  # Time step in seconds
-#nh = int(3600 / dt)  # Number of time steps per hour
-nh = 1
-# Adjust time parameters to focus on the first 10 hours
+
+# Simulating for 10 hours
 hours_to_simulate = 10
 total_time = hours_to_simulate * 3600  # 10 hours in seconds
-n_step = hours_to_simulate * nh  # Only timesteps for 10 hours
 
+# Ensure enough timesteps while keeping control over total steps
+max_timesteps = 500  # Set a reasonable cap (higher than 50)
 
-def step_hook(pb, ts, variables):
-    """
-    Extract temperature at the leftmost and rightmost nodes and store it.
-    """
-    T_field = pb.get_variables()['T']
-    coors = pb.fields['temperature'].get_coor()
-
-    num_nodes = coors.shape[0]  # Get number of nodes in mesh
-    print(f"Mesh contains {num_nodes} nodes.")  # Debugging
-
-    left_index = 0  # Always first node
-    right_index = num_nodes - 1  # Last valid node
-
-    T_left = T_field.data[left_index]  # Bottom layer temperature
-    T_right = T_field.data[right_index]  # Top layer temperature
-
-    filename = "temperature_probe.csv"
-    with open(filename, mode='a', newline='') as file:
-        writer = csv.writer(file)
-        writer.writerow([ts.time, T_left, T_right])
-
-    print(f"Saved timestep {ts.time:.2f}s: Bottom Temp = {T_left}, Top Temp = {T_right}")
-
+dt = 3600.0  # Set dt to 1 hour (3600 seconds)
+n_step = hours_to_simulate  # Set number of steps equal to number of hours
 
 def mesh_hook(mesh, mode):
     """Generate the 1D mesh."""
@@ -173,18 +152,46 @@ solvers = {
     }),
     'ts': ('ts.simple', {
         't0': 0.0,
-        't1': total_time,
-        'dt': dt,
-        'n_step': n_step,
+        't1': total_time,  # 10 hours total
+        'dt': dt,  # 1 hour step size
+        'n_step': n_step,  # 10 total steps
         'verbose': True,
     }),
 }
 
+
+def save_temperature_results(out, problem, state, extend=False):
+    """ Save temperature values at each timestep into a CSV file. """
+    filename = os.path.join(problem.conf.options['output_dir'], "temperature_results.csv")
+    
+    # Get the full state vector instead of trying to index it as a dictionary
+    T_var = state.get_state()  # Returns the full solution vector
+    coors = problem.fields['temperature'].get_coor()  # Get mesh node coordinates
+
+    # Ensure correct indexing based on the shape of T_var
+    if T_var.shape[0] != len(coors):  # Check if dimensions match
+        raise ValueError(f"Mismatch between state vector size ({T_var.shape[0]}) and number of nodes ({len(coors)})")
+
+    # Write headers only for the first timestep
+    if problem.ts.step == 0:
+        with open(filename, 'w', newline='') as csvfile:
+            writer = csv.writer(csvfile)
+            writer.writerow(["Time (s)", "Node Index", "Position (m)", "Temperature (°C)"])
+
+    # Append results for each timestep
+    with open(filename, 'a', newline='') as csvfile:
+        writer = csv.writer(csvfile)
+        for i, coord in enumerate(coors):
+            writer.writerow([problem.ts.time, i, coord[0], T_var[i]])
+
+    return out  # Ensure compatibility with Sfepy execution
+
+
 options = {
-    'step_hook': 'step_hook',  # Calls the function at every timestep
     'nls': 'newton',
     'ls': 'ls',
     'ts': 'ts',
     'save_times': 'all',
+    'post_process_hook': save_temperature_results,  # Runs after each timestep
     'output_dir': './output_snow',
 }
