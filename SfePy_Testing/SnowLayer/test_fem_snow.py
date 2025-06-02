@@ -1,5 +1,10 @@
 r"""
 Transient 1D heat equation for snow layer with time-dependent BCs.
+
+For uploading to Github:
+    git add test_fem_snow.py 
+    git commit -m "text here"
+    git push origin main
 """
 from __future__ import absolute_import
 import numpy as nm
@@ -94,8 +99,9 @@ filename_mesh = UserMeshIO(mesh_hook)
 
 materials = {
     'mat': ({'lam': lam_i, 'rho_cp': rho_wet * c_wet},),
-    'heat_loss_h': 'get_h_o',
-    'heat_loss_T': 'get_t_o',
+    'h_out_dyn': 'get_h_o',  # Left boundary (variable)
+    'T_out_dyn': 'get_t_o',  # Left boundary (variable)
+    'in_fixed': ({'h_in': h_i, 'T_in': t_i},),  # Right boundary (fixed values)
 }
 
 
@@ -121,9 +127,10 @@ variables = {
 }
 
 # Remove EBCs if using Newton BCs
-ebcs = {
-    't2': ('Gamma_Right', {'T.0': 0.0}),  # Constant temperature on right
-}
+ebcs = {}
+#ebcs = {
+#    't2': ('Gamma_Right', {'T.0': 0.0}),  # Constant temperature on right
+#}
 
 integrals = {
     'i': 2,
@@ -132,9 +139,10 @@ integrals = {
 equations = {
     'Heat': """dw_dot.i.Omega(mat.rho_cp, s, dT/dt)
              + dw_laplace.i.Omega(mat.lam, s, T)
-             = dw_bc_newton.i.Gamma_Left(heat_loss_h.val, heat_loss_T.val, s, T)"""
+             = dw_bc_newton.i.Gamma_Left(h_out_dyn.val, T_out_dyn.val, s, T)
+             + dw_bc_newton.i.Gamma_Right(in_fixed.h_in, in_fixed.T_in, s, T)
+             """
 }
-
 
 
 ics = {
