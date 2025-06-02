@@ -41,9 +41,7 @@ t_o, h_o = read_temp_and_hcoeff_from_csv()
 nr_hour = len(t_o)  # Number of hours
 
 # Time parameters
-
-# Simulating for 10 hours
-hours_to_simulate = 10
+hours_to_simulate = 10 # Simulating for 10 hours
 total_time = hours_to_simulate * 3600  # 10 hours in seconds
 
 # Ensure enough timesteps while keeping control over total steps
