@@ -1,11 +1,17 @@
 r"""
 Transient 1D heat equation for snow layer with time-dependent BCs.
+
+For uploading to Github:
+    git add test_fem_snow.py 
+    git commit -m "text here"
+    git push origin main
 """
 from __future__ import absolute_import
 import numpy as nm
 from sfepy.discrete.fem import Mesh
 from sfepy.discrete.fem.meshio import UserMeshIO
 import csv
+import os
 
 # Physical parameters
 d_ins = 0.1       # Insulation thickness [m]
@@ -40,14 +46,14 @@ t_o, h_o = read_temp_and_hcoeff_from_csv()
 nr_hour = len(t_o)  # Number of hours
 
 # Time parameters
-dt = 10.0  # Time step in seconds
-#nh = int(3600 / dt)  # Number of time steps per hour
-nh = 1
-# Adjust time parameters to focus on the first 10 hours
-hours_to_simulate = 10
+hours_to_simulate = 10 # Simulating for 10 hours
 total_time = hours_to_simulate * 3600  # 10 hours in seconds
-n_step = hours_to_simulate * nh  # Only timesteps for 10 hours
 
+# Ensure enough timesteps while keeping control over total steps
+max_timesteps = 500  # Set a reasonable cap (higher than 50)
+
+dt = 3600.0  # Set dt to 1 hour (3600 seconds)
+n_step = hours_to_simulate  # Set number of steps equal to number of hours
 
 def mesh_hook(mesh, mode):
     """Generate the 1D mesh."""
@@ -93,8 +99,9 @@ filename_mesh = UserMeshIO(mesh_hook)
 
 materials = {
     'mat': ({'lam': lam_i, 'rho_cp': rho_wet * c_wet},),
-    'heat_loss_h': 'get_h_o',
-    'heat_loss_T': 'get_t_o',
+    'h_out_dyn': 'get_h_o',  # Left boundary (variable)
+    'T_out_dyn': 'get_t_o',  # Left boundary (variable)
+    'in_fixed': ({'h_in': h_i, 'T_in': t_i},),  # Right boundary (fixed values)
 }
 
 
@@ -120,9 +127,10 @@ variables = {
 }
 
 # Remove EBCs if using Newton BCs
-ebcs = {
-    't2': ('Gamma_Right', {'T.0': 0.0}),  # Constant temperature on right
-}
+ebcs = {}
+#ebcs = {
+#    't2': ('Gamma_Right', {'T.0': 0.0}),  # Constant temperature on right
+#}
 
 integrals = {
     'i': 2,
@@ -131,9 +139,10 @@ integrals = {
 equations = {
     'Heat': """dw_dot.i.Omega(mat.rho_cp, s, dT/dt)
              + dw_laplace.i.Omega(mat.lam, s, T)
-             = dw_bc_newton.i.Gamma_Left(heat_loss_h.val, heat_loss_T.val, s, T)"""
+             = dw_bc_newton.i.Gamma_Left(h_out_dyn.val, T_out_dyn.val, s, T)
+             + dw_bc_newton.i.Gamma_Right(in_fixed.h_in, in_fixed.T_in, s, T)
+             """
 }
-
 
 
 ics = {
@@ -149,17 +158,46 @@ solvers = {
     }),
     'ts': ('ts.simple', {
         't0': 0.0,
-        't1': total_time,
-        'dt': dt,
-        'n_step': n_step,
+        't1': total_time,  # 10 hours total
+        'dt': dt,  # 1 hour step size
+        'n_step': n_step,  # 10 total steps
         'verbose': True,
     }),
 }
+
+
+def save_temperature_results(out, problem, state, extend=False):
+    """ Save temperature values at each timestep into a CSV file. """
+    filename = os.path.join(problem.conf.options['output_dir'], "temperature_results.csv")
+    
+    # Get the full state vector instead of trying to index it as a dictionary
+    T_var = state.get_state()  # Returns the full solution vector
+    coors = problem.fields['temperature'].get_coor()  # Get mesh node coordinates
+
+    # Ensure correct indexing based on the shape of T_var
+    if T_var.shape[0] != len(coors):  # Check if dimensions match
+        raise ValueError(f"Mismatch between state vector size ({T_var.shape[0]}) and number of nodes ({len(coors)})")
+
+    # Write headers only for the first timestep
+    if problem.ts.step == 0:
+        with open(filename, 'w', newline='') as csvfile:
+            writer = csv.writer(csvfile)
+            writer.writerow(["Time (s)", "Node Index", "Position (m)", "Temperature (°C)"])
+
+    # Append results for each timestep
+    with open(filename, 'a', newline='') as csvfile:
+        writer = csv.writer(csvfile)
+        for i, coord in enumerate(coors):
+            writer.writerow([problem.ts.time, i, coord[0], T_var[i]])
+
+    return out  # Ensure compatibility with Sfepy execution
+
 
 options = {
     'nls': 'newton',
     'ls': 'ls',
     'ts': 'ts',
     'save_times': 'all',
+    'post_process_hook': save_temperature_results,  # Runs after each timestep
     'output_dir': './output_snow',
 }
