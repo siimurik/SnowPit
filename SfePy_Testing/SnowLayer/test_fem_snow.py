@@ -46,14 +46,11 @@ t_o, h_o = read_temp_and_hcoeff_from_csv()
 nr_hour = len(t_o)  # Number of hours
 
 # Time parameters
-hours_to_simulate = 10 # Simulating for 10 hours
-total_time = hours_to_simulate * 3600  # 10 hours in seconds
-
-# Ensure enough timesteps while keeping control over total steps
-max_timesteps = 500  # Set a reasonable cap (higher than 50)
-
-dt = 3600.0  # Set dt to 1 hour (3600 seconds)
-n_step = hours_to_simulate  # Set number of steps equal to number of hours
+# Time parameters - match original function's resolution
+dt = 3600.0  # 10 seconds (original value)
+hours_to_simulate = 250
+total_time = hours_to_simulate * 3600
+n_step = int(3672)
 
 def mesh_hook(mesh, mode):
     """Generate the 1D mesh."""
@@ -139,8 +136,8 @@ integrals = {
 equations = {
     'Heat': """dw_dot.i.Omega(mat.rho_cp, s, dT/dt)
              + dw_laplace.i.Omega(mat.lam, s, T)
-             = dw_bc_newton.i.Gamma_Left(h_out_dyn.val, T_out_dyn.val, s, T)
-             + dw_bc_newton.i.Gamma_Right(in_fixed.h_in, in_fixed.T_in, s, T)
+             = - dw_bc_newton.i.Gamma_Left(h_out_dyn.val, T_out_dyn.val, s, T)
+             - dw_bc_newton.i.Gamma_Right(in_fixed.h_in, in_fixed.T_in, s, T)
              """
 }
 
@@ -152,30 +149,30 @@ ics = {
 solvers = {
     'ls': ('ls.scipy_direct', {}),
     'newton': ('nls.newton', {
-        'i_max': 1,
-        'eps_a': 1e-10,
+        'i_max': 10,
+        'eps_a': 1e-8,
         'is_linear': True,
     }),
     'ts': ('ts.simple', {
         't0': 0.0,
-        't1': total_time,  # 10 hours total
-        'dt': dt,  # 1 hour step size
-        'n_step': n_step,  # 10 total steps
-        'verbose': True,
+        't1': 3600,  # Total simulation duration (1 hour)
+        'dt': 10,  # Step size of 10 seconds
+        'n_step': 360,  # Ensure 360 steps are taken
+        'verbose': 2,
     }),
 }
 
 
 def save_temperature_results(out, problem, state, extend=False):
-    """ Save temperature values at each timestep into a CSV file. """
+    """ Save temperature values only at full-hour intervals (every 3600s) into a CSV file. """
     filename = os.path.join(problem.conf.options['output_dir'], "temperature_results.csv")
     
-    # Get the full state vector instead of trying to index it as a dictionary
+    # Get the full state vector
     T_var = state.get_state()  # Returns the full solution vector
     coors = problem.fields['temperature'].get_coor()  # Get mesh node coordinates
 
     # Ensure correct indexing based on the shape of T_var
-    if T_var.shape[0] != len(coors):  # Check if dimensions match
+    if T_var.shape[0] != len(coors):  
         raise ValueError(f"Mismatch between state vector size ({T_var.shape[0]}) and number of nodes ({len(coors)})")
 
     # Write headers only for the first timestep
@@ -184,13 +181,16 @@ def save_temperature_results(out, problem, state, extend=False):
             writer = csv.writer(csvfile)
             writer.writerow(["Time (s)", "Node Index", "Position (m)", "Temperature (°C)"])
 
-    # Append results for each timestep
-    with open(filename, 'a', newline='') as csvfile:
-        writer = csv.writer(csvfile)
-        for i, coord in enumerate(coors):
-            writer.writerow([problem.ts.time, i, coord[0], T_var[i]])
+    # **Only save data at full-hour marks (3600s, 7200s, ...)**
+    if problem.ts.time % 3600 < problem.ts.dt:  
+        with open(filename, 'a', newline='') as csvfile:
+            writer = csv.writer(csvfile)
+            for i, coord in enumerate(coors):
+                writer.writerow([problem.ts.time, i, coord[0], T_var[i]])
 
     return out  # Ensure compatibility with Sfepy execution
+
+
 
 
 options = {
