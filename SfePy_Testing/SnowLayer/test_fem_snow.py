@@ -1,10 +1,20 @@
 r"""
+==================================================================
 Transient 1D heat equation for snow layer with time-dependent BCs.
-
+------------------------------------------------------------------
+Solves the 1D transient heat equation:
+    ∂T/∂t = α ∂²T/∂x²
+with boundary conditions:
+    At x=0: -k∂T/∂x = h_o(T - T_o)
+    At x=L: -k∂T/∂x = h_i(T - T_i)
+where:
+    α = k/(ρc_p) is thermal diffusivity
+------------------------------------------------------------------
 For uploading to Github:
     git add test_fem_snow.py 
     git commit -m "text here"
     git push origin main
+==================================================================
 """
 from __future__ import absolute_import
 import numpy as nm
