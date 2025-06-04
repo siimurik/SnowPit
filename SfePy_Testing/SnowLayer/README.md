@@ -182,7 +182,7 @@ $$
 
 ---
 
-# **Mathematically equivalency**
+# **Mathematical equivalency**
 
 ### **Form 1 (Compact Form)**
 $$
