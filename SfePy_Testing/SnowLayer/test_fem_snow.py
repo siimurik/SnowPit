@@ -45,12 +45,6 @@ def read_temp_and_hcoeff_from_csv(filename="t_o_and_h_o.csv"):
 t_o, h_o = read_temp_and_hcoeff_from_csv()
 nr_hour = len(t_o)  # Number of hours
 
-# Time parameters
-# Time parameters - match original function's resolution
-dt = 3600.0  # 10 seconds (original value)
-hours_to_simulate = 250
-total_time = hours_to_simulate * 3600
-n_step = int(3672)
 
 def mesh_hook(mesh, mode):
     """Generate the 1D mesh."""
@@ -69,25 +63,61 @@ def mesh_hook(mesh, mode):
 
 def get_h_o(ts, coors, mode=None, **kwargs):
     """
-    Time-dependent heat transfer coefficient values (h_o).
+    Retrieves the time-dependent heat transfer coefficient (`h_o`) for a given time step.
+
+    This function returns a uniform heat transfer coefficient at full-hour intervals.
+    The same value remains applied throughout the hour until the next update.
+
+    Parameters:
+        ts (TimeStepper): Time step object containing the current simulation time in seconds.
+        coors (array): Coordinates of mesh points (required for function compatibility).
+        mode (str, optional): Specifies the evaluation mode (must be 'qp' for query points).
+        **kwargs: Additional arguments (not used here).
+
+    Returns:
+        dict: A dictionary with the key `'val'` containing an array of heat transfer coefficient values
+              that remain constant for the duration of each hour.
+
+    Example:
+        - At `ts.time = 0s` → Uses `h_o[0]`
+        - At `ts.time = 3600s` → Uses `h_o[1]`
+        - At `ts.time = 5400s` → Still uses `h_o[1]` (until next full hour)
     """
     if mode != 'qp' or coors is None:
         return {}
 
-    hour_idx = min(int(ts.time / 3600), len(h_o) - 1)  # Ensure valid index
-    val = nm.full((coors.shape[0], 1, 1), h_o[hour_idx], dtype=nm.float64)  # Correct shape
+    hour_idx = min(int(ts.time / 3600), len(h_o) - 1)  # Select correct hourly index
+    val = nm.full((coors.shape[0], 1, 1), h_o[hour_idx], dtype=nm.float64)  # Apply constant value
 
     return {'val': val}
 
 def get_t_o(ts, coors, mode=None, **kwargs):
     """
-    Time-dependent ambient temperature values (t_o).
+    Retrieves the time-dependent ambient temperature (`t_o`) for a given time step.
+
+    Similar to `get_h_o()`, this function applies ambient temperature values at 
+    full-hour marks. The temperature remains unchanged until the next hour.
+
+    Parameters:
+        ts (TimeStepper): Time step object containing the current simulation time in seconds.
+        coors (array): Coordinates of mesh points (required for function compatibility).
+        mode (str, optional): Specifies the evaluation mode (must be 'qp' for query points).
+        **kwargs: Additional arguments (not used here).
+
+    Returns:
+        dict: A dictionary with the key `'val'` containing an array of ambient temperature values
+              that remain constant for the duration of each hour.
+
+    Example:
+        - At `ts.time = 0s` → Uses `t_o[0]`
+        - At `ts.time = 3600s` → Uses `t_o[1]`
+        - At `ts.time = 5400s` → Still uses `t_o[1]` (until next full hour)
     """
     if mode != 'qp' or coors is None:
         return {}
 
-    hour_idx = min(int(ts.time / 3600), len(t_o) - 1)  # Ensure valid index
-    val = nm.full((coors.shape[0], 1, 1), t_o[hour_idx], dtype=nm.float64)  # Correct shape
+    hour_idx = min(int(ts.time / 3600), len(t_o) - 1)  # Select correct hourly index
+    val = nm.full((coors.shape[0], 1, 1), t_o[hour_idx], dtype=nm.float64)  # Apply constant value
 
     return {'val': val}
 
@@ -137,7 +167,7 @@ equations = {
     'Heat': """dw_dot.i.Omega(mat.rho_cp, s, dT/dt)
              + dw_laplace.i.Omega(mat.lam, s, T)
              = - dw_bc_newton.i.Gamma_Left(h_out_dyn.val, T_out_dyn.val, s, T)
-             - dw_bc_newton.i.Gamma_Right(in_fixed.h_in, in_fixed.T_in, s, T)
+               - dw_bc_newton.i.Gamma_Right(in_fixed.h_in, in_fixed.T_in, s, T)
              """
 }
 
@@ -145,6 +175,13 @@ equations = {
 ics = {
     'ic': ('Omega', {'T.0': 0.0}),
 }
+
+# Time parameters - match original function's resolution
+start = 0.0
+nr_of_hours = 100
+stop = nr_of_hours * 3600.0
+dt = 10.0
+nr_of_steps = int(stop/dt)
 
 solvers = {
     'ls': ('ls.scipy_direct', {}),
@@ -154,10 +191,10 @@ solvers = {
         'is_linear': True,
     }),
     'ts': ('ts.simple', {
-        't0': 0.0,
-        't1': 3600,  # Total simulation duration (1 hour)
-        'dt': 10,  # Step size of 10 seconds
-        'n_step': 360,  # Ensure 360 steps are taken
+        't0': start,
+        't1': stop,  # Total simulation duration (1 hour)
+        'dt': dt,  # Step size of 10 seconds
+        'n_step': nr_of_steps,  # Ensure 360 steps are taken
         'verbose': 2,
     }),
 }
@@ -191,13 +228,11 @@ def save_temperature_results(out, problem, state, extend=False):
     return out  # Ensure compatibility with Sfepy execution
 
 
-
-
 options = {
     'nls': 'newton',
     'ls': 'ls',
     'ts': 'ts',
-    'save_times': 'all',
+    'save_times': [3600 * i for i in range(1, nr_of_hours + 1)],
     'post_process_hook': save_temperature_results,  # Runs after each timestep
     'output_dir': './output_snow',
 }
