@@ -27,10 +27,6 @@ moist_cont = 50.0 # %
 rho_wet = rho_dry + moist_cont/100.0*1000 # kg/m^3
 D = lam_i/(c_wet * rho_wet) # m^2/s
 
-# Boundary conditions
-t_i = 0.0         # Inner temperature [°C]
-h_i = 99.75       # Inner heat transfer coefficient [W/m2K]
-
 def read_temp_and_hcoeff_from_csv(filename="t_o_and_h_o.csv"):
     """Read temperature and heat transfer coefficient data from CSV file."""
     t_o, h_o = [], []
@@ -42,9 +38,10 @@ def read_temp_and_hcoeff_from_csv(filename="t_o_and_h_o.csv"):
                 h_o.append(float(row[1].strip()))
     return t_o, h_o
 
+# Boundary conditions
+t_i = 0.0         # Inner temperature [°C]
+h_i = 99.75       # Inner heat transfer coefficient [W/m2K]
 t_o, h_o = read_temp_and_hcoeff_from_csv()
-nr_hour = len(t_o)  # Number of hours
-
 
 def mesh_hook(mesh, mode):
     """Generate the 1D mesh."""
@@ -177,6 +174,7 @@ ics = {
 }
 
 # Time parameters - match original function's resolution
+nr_hour = len(t_o)  # Number of total hours
 start = 0.0
 nr_of_hours = 100
 stop = nr_of_hours * 3600.0
@@ -232,7 +230,7 @@ options = {
     'nls': 'newton',
     'ls': 'ls',
     'ts': 'ts',
-    'save_times': [3600 * i for i in range(1, nr_of_hours + 1)],
+    'save_times': [3600*i for i in range(1, nr_of_hours + 1)],
     'post_process_hook': save_temperature_results,  # Runs after each timestep
     'output_dir': './output_snow',
 }
