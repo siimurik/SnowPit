@@ -34,7 +34,7 @@ lam_i = 0.32      # Thermal conductivity [W/(mK)]
 c_wet = 2.59E03   # J/(kg*K)
 rho_dry = 100.0   # kg/m^3
 moist_cont = 50.0 # %
-rho_wet = rho_dry + moist_cont/100.0*1000 # kg/m^3
+rho_wet = rho_dry + moist_cont*10.0 # /100.0*1000 # kg/m^3
 D = lam_i/(c_wet * rho_wet) # m^2/s
 
 def read_temp_and_hcoeff_from_csv(filename="t_o_and_h_o.csv"):
@@ -200,9 +200,9 @@ solvers = {
     }),
     'ts': ('ts.simple', {
         't0': start,
-        't1': stop,  # Total simulation duration (1 hour)
-        'dt': dt,  # Step size of 10 seconds
-        'n_step': nr_of_steps,  # Ensure 360 steps are taken
+        't1': stop,             # Hours in seconds
+        'dt': dt,               # Step size of 10 seconds
+        'n_step': nr_of_steps,  # Ensure 360 steps are taken for every hour
         'verbose': 2,
     }),
 }
