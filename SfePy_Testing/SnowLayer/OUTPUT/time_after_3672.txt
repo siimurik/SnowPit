@@ -1,0 +1,10 @@
+sfepy: ====== time stats ======
+sfepy: nls residual: 3082.06303435 [s]
+sfepy:   nls matrix: 5.02638278 [s]
+sfepy:    nls solve: 369.06826926 [s]
+sfepy:     nls time: 3929.17613616 [s]
+sfepy: solved in 1321920 steps in 4865.80 seconds
+
+real	81m10,046s
+user	79m11,803s
+sys	1m59,186s
