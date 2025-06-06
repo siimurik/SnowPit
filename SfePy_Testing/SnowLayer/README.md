@@ -217,7 +217,7 @@ $$
 
 ---
 
-### **Why Are They Equivalent?**
+# **Why Are They Equivalent?**
 1. **Expand Form 1's RHS**:  
    $$
    -h_o (T(0,t) - T_o)s(0) - h_i (T(L,t) - T_i)s(L) = -h_o T(0,t)s(0) + h_o T_o s(0) - h_i T(L,t)s(L) + h_i T_i s(L)
@@ -267,3 +267,111 @@ Both forms are correct, but:
 - **Form 2** is better for analytical derivations (explicitly splits terms).  
 
 The choice depends on whether you’re writing code or doing math by hand!
+
+The apparent discrepancy arises from **dimensionality** and **how boundary integrals are represented** in 1D vs. higher dimensions. Let me clarify why the Robin BC terms lose their integral signs in 1D and how this connects to the general weak form.
+
+---
+
+### **1. General Weak Form (2D/3D)**
+In higher dimensions, boundary terms are **surface integrals** over $\Gamma$:
+$$
+\int_\Gamma \underbrace{(-k \nabla T \cdot n)}_{\text{Boundary flux}} s \, dS
+$$
+For Robin BCs ($-k \nabla T \cdot n = h(T - T_\infty)$), this becomes:
+$$
+\int_\Gamma h(T - T_\infty) s \, dS
+$$
+- The integral is necessary because $\Gamma$ is a **region** (surface/curve).  
+- Example from your `sfepy` reference:
+  $$
+  \int_{\Gamma_{source}} h(T - T_\infty) s \, dS + \int_{\Gamma_{plate}} h(T - T_\infty) s \, dS
+  $$
+
+---
+
+### **2. 1D Weak Form (No Boundary Integrals)**
+In 1D, the "boundary" reduces to **two points** ($x = 0$ and $x = L$). The boundary "integral" simplifies to **point evaluation**:
+$$
+\int_{\Gamma} (-k \nabla T \cdot n) s \, dS \rightarrow \left[ (-k \partial_x T) s \right]_0^L
+$$
+- For Robin BCs at $x = 0$ and $x = L$:
+  $$
+  \left[ (-k \partial_x T) s \right]_0^L = -h_o(T(0,t) - T_o)s(0) - h_i(T(L,t) - T_i)s(L)
+  $$
+- **No integrals appear** because:
+  - In 1D, $\Gamma = \{0, L\}$ is a zero-dimensional set (points).  
+  - The "integral" over $\Gamma$ is just a **sum of evaluations** at these points.
+
+---
+
+### **Why the Difference?**
+| Dimension | Boundary Integral Representation          | Example                                      |
+|-----------|------------------------------------------|---------------------------------------------|
+| **2D/3D** | $\int_\Gamma h(T - T_\infty) s \, dS$  | $\int_{\Gamma_{source}} h(T - T_\infty) s$ |
+| **1D**    | $h(T - T_\infty) s \big|_{x=0}^L$      | $-h_o(T(0,t) - T_o)s(0) - h_i(T(L,t) - T_i)s(L)$ |
+
+---
+
+### **Key Implications**
+1. **Mathematical Consistency**:  
+   - Both forms are correct. The 1D case is a specialization where boundary integrals collapse to point evaluations.  
+   - In FEM codes like `sfepy`, the 1D version would still use `dw_bc_robin`, but internally, it handles the point evaluation.
+
+2. **Your Numerical Instability**:  
+   - If you mistakenly applied **2D-style integrals** to 1D (e.g., multiplying by a "boundary length"), the scaling would be wrong, causing energy imbalance.  
+   - The **signs** must still be negative for Robin BCs to ensure heat flows **out** when $T > T_\infty$.
+
+3. **Spectral/Finite Difference Methods**:  
+   - In methods that don’t use weak forms, Robin BCs are enforced directly as equations at boundary points (no integrals).  
+
+---
+
+### **How to Reconcile the Two Forms**
+#### **General Weak Form (N-D)**
+$$
+\int_\Omega \rho c_p \frac{\partial T}{\partial t} s \, dV + \int_\Omega k \nabla T \cdot \nabla s \, dV = - \int_\Gamma h(T - T_\infty) s \, dS
+$$
+
+#### **1D Weak Form**
+$$
+\int_0^L \rho c_p \frac{\partial T}{\partial t} s \, dx + \int_0^L k \partial_x T \partial_x s \, dx = -h_o(T(0,t) - T_o)s(0) - h_i(T(L,t) - T_i)s(L)
+$$
+
+#### **Connection**
+- In 1D, $\int_\Gamma \rightarrow \sum_{x \in \{0, L\}}$.  
+- The **integral signs vanish** because the boundary is a discrete set.
+
+---
+
+### **Practical Advice**
+1. **For 1D Codes**:  
+   - Implement Robin BCs as **point conditions** (no integrals).  
+   - Ensure the negative sign is preserved:
+     ```python
+     rhs = -h_left * (T[0] - T_o) * s[0] - h_right * (T[-1] - T_i) * s[-1]
+     ```
+
+2. **For `sfepy`/FEM**:  
+   - Use `dw_bc_robin` (it automatically handles dimensionality).  
+   - The integral is hidden in the assembly process.
+
+3. **Debugging Tip**:  
+   - For 1D, compare with the analytical solution for a rod with Robin BCs:
+     $$
+     T(x) = T_\infty + (T_0 - T_\infty) e^{-h x / k}
+     $$
+     If your numerical solution diverges, check:
+     - **Signs** on Robin terms.  
+     - **Scaling** (no integrals in 1D!).  
+
+---
+
+### **Summary**
+- **In 2D/3D**: Robin BCs are surface integrals ($\int_\Gamma$).  
+- **In 1D**: They reduce to point evaluations (**no integrals**).  
+- **Signs are critical**: Negative for correct energy outflow.  
+- Your instability likely came from either:
+  1. Missing negative signs, or  
+  2. Incorrectly treating 1D BCs as integrals.  
+
+The two forms are consistent—the 1D version is just the degenerate case of the general N-D weak form.
