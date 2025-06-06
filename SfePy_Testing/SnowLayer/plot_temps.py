@@ -5,7 +5,7 @@ Compares temperature profiles from FEM and Implicit FDM simulations
 """
 
 import csv
-import matplotlib.pyplot as plt
+import matplotlib.pyplot as plt # pip install PyQt5
 
 # Configuration
 FEM_DATA_PATH = 'output_snow/temperature_results.csv'
