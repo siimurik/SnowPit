@@ -14,6 +14,15 @@ For uploading to Github:
     git add test_fem_snow.py 
     git commit -m "text here"
     git push origin main
+------------------------------------------------------------------
+Run this script with:
+    sfepy-run test_fem_snow.py
+
+Run on mulptiple cores with:
+    mpirun -n 4 sfepy-run --app=bvp-mM --debug-mpi test_fem_snow.py
+
+Ensure mpirun is installed:
+    sudo apt install openmpi-bin libopenmpi-dev
 ==================================================================
 """
 from __future__ import absolute_import
@@ -148,7 +157,7 @@ functions = {
 regions = {
     'Omega': 'all',
     'Gamma_Left': ('vertices in (x < 0.00001)', 'facet'),
-    'Gamma_Right': ('vertices in (x > %f)' % (d_ins - 0.00001), 'facet'),
+    'Gamma_Right': ('vertices in (x > %f)' % (d_ins - 0.00001), 'facet'), 
 }
 
 fields = {
@@ -167,7 +176,7 @@ ebcs = {}
 #}
 
 integrals = {
-    'i': 2,
+    'i': 1,
 }
 
 equations = {
@@ -186,7 +195,7 @@ ics = {
 # Time parameters - match original function's resolution
 nr_hour = len(t_o)  # Number of total hours
 start = 0.0
-nr_of_hours = 100
+nr_of_hours = 10
 stop = nr_of_hours * 3600.0
 dt = 10.0
 nr_of_steps = int(stop/dt)
@@ -202,8 +211,8 @@ solvers = {
         't0': start,
         't1': stop,             # Hours in seconds
         'dt': dt,               # Step size of 10 seconds
-        'n_step': nr_of_steps,  # Ensure 360 steps are taken for every hour
-        'verbose': 2,
+        'n_step': nr_of_steps,  # Ensure 360 steps are taken for every hour # has precedence over dt!
+        'verbose': 1,
     }),
 }
 
@@ -243,4 +252,5 @@ options = {
     'save_times': [3600*i for i in range(1, nr_of_hours + 1)],
     'post_process_hook': save_temperature_results,  # Runs after each timestep
     'output_dir': './output_snow',
+#   'active_only' : False,  # TODO: look into this option
 }
