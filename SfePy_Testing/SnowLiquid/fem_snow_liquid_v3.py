@@ -9,12 +9,12 @@ Solves the coupled system:
 where m_evap = f(T, Cl) couples the equations
 ==================================================================
 """
-import os
-import csv
+from __future__ import absolute_import
 import numpy as nm
 from sfepy.discrete.fem import Mesh
-from __future__ import absolute_import
 from sfepy.discrete.fem.meshio import UserMeshIO
+import csv
+import os
 
 # Physical parameters
 d_ins = 0.1       # Insulation thickness [m]
