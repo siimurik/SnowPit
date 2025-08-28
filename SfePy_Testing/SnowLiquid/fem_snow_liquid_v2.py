@@ -3,8 +3,8 @@ r"""
 Step 2: Coupled Heat-Liquid Transport System
 ------------------------------------------------------------------
 Solves the coupled system:
-    Heat:   ∂T/∂t = α ∂²T/∂x² + L_v * ∂Cl/∂t / (ρ*cp) + q_dot / (ρ*cp)
-    Liquid: ∂Cl/∂t = D_l ∂²Cl/∂x² - m_evap
+    Heat:   ∂T/∂t = α ∂²T/∂x² + L_v * ∂Cl/∂t/(ρ*cp) + q_dot/(ρ*cp)
+    Liquid: ∂Cl/∂t = D_l * ∂²Cl/∂x² - m_evap
 
 where m_evap = f(T, Cl) couples the equations
 ==================================================================
@@ -39,16 +39,19 @@ q_dot = 0.0       # Heat source [W/m^3]
 k_evap = 1e-8     # Evaporation rate constant [1/s]
 T_ref = 0.0       # Reference temperature [°C]
 
-def read_temp_and_hcoeff_from_csv(filename="t_o_and_h_o.csv"):
+def read_temp_and_hcoeff_from_csv(filename="t_rh_to_ho.csv"):
     """Read temperature and heat transfer coefficient data from CSV file."""
-    t_o, h_o = [], []
+    time, rh, t_o, h_o = [], [], [], []
     with open(filename, 'r') as csvfile:
         csvreader = csv.reader(csvfile)
         for row in csvreader:
-            if len(row) >= 2:
-                t_o.append(float(row[0].strip()))
-                h_o.append(float(row[1].strip()))
-    return t_o, h_o
+            #if len(row) >= 2:
+            time.append(float(row[0].strip()))  # time in seconds
+            rh.append(float(row[1].strip()))    # relative humidity %
+            t_o.append(float(row[2].strip()))   # outer layer temperature
+            h_o.append(float(row[3].strip()))   # outer layer convection 
+
+    return time, rh, t_o, h_o
 
 # Boundary conditions
 t_i = 0.0         # Inner temperature [°C]
@@ -60,7 +63,7 @@ cl_o = 0.02       # Outer reference liquid content [kg/m^3] # TODO! After one ho
 h_l_i = 1e-6      # Inner liquid mass transfer coefficient [m/s]
 h_l_o = 2e-6      # Outer liquid mass transfer coefficient [m/s]
 
-t_o, h_o = read_temp_and_hcoeff_from_csv()
+time, rh, t_o, h_o = read_temp_and_hcoeff_from_csv()
 
 def mesh_hook(mesh, mode):
     """Generate the 1D mesh."""
