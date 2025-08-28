@@ -9,12 +9,12 @@ Solves the coupled system:
 where m_evap = f(T, Cl) couples the equations
 ==================================================================
 """
-from __future__ import absolute_import
+import os
+import csv
 import numpy as nm
 from sfepy.discrete.fem import Mesh
+from __future__ import absolute_import
 from sfepy.discrete.fem.meshio import UserMeshIO
-import csv
-import os
 
 # Physical parameters
 d_ins = 0.1       # Insulation thickness [m]
@@ -33,7 +33,7 @@ D = lam_i/(c_wet * rho_wet) # m^2/s
 # New parameters for liquid transport
 D_l = 1e-8        # Liquid diffusion coefficient [m^2/s]
 L_v = 2.45e6      # Latent heat of vaporization [J/kg]
-q_dot = 0.0       # Heat source [W/m^3]
+q_dot = 0.0       # Heat source [W/m^3] # TODO! SMR due to temp and rain (SMR_total)
 
 # Evaporation model parameters
 k_evap = 1e-8     # Evaporation rate constant [1/s]
@@ -143,6 +143,10 @@ def humidity_to_liquid_content(rh_percent, T_celsius):
     - Snow/ice surface area considerations
     - Temperature-dependent equilibrium relationships
     """
+    # TODO: 
+    # 1. Add Psat_WV - Saturation vapor pressure
+    # 2. Add surface area - 210 m^2 (depth 1 m)
+
     # Convert RH percentage to fraction
     rh_fraction = rh_percent / 100.0
     
@@ -150,9 +154,16 @@ def humidity_to_liquid_content(rh_percent, T_celsius):
     # Could be made more sophisticated with temperature dependence
     cl_ref = min_liquid_content + rh_fraction * (max_liquid_content - min_liquid_content)
     
+    # NOTE! t_o is air temperature which takes into account both air 
+    # temperature and solar radiation effects.
+
     # Optional: Temperature correction (higher T allows more liquid)
-    # temp_factor = max(0.1, 1.0 + 0.05 * T_celsius)  # 5% increase per degree above 0°C
-    # cl_ref *= temp_factor
+    temp_factor = max(0.1, 1.0 + 0.05 * T_celsius)  # 5% increase per degree above 0°C
+    cl_ref *= temp_factor
+
+    # TODO: If possible, take into account precipitation as well.
+    # Also look into the need to import sensible heat flux from 
+    # rainfall (q_rain) and snow hrly melt rate (v_rain)
     
     return cl_ref
 
