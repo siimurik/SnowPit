@@ -57,6 +57,38 @@ def read_csv_with_encoding(file_path, columns_to_keep=None):
     
     return data
 
+def find_first_empty_cell_index(data, column_index):
+    """
+    Find the index of the first row where the specified column is empty.
+    
+    Parameters:
+    data (list): List of rows
+    column_index (int): Index of column to check
+    
+    Returns:
+    int: Index of first empty cell, or None if not found
+    """
+    for index, row in enumerate(data):
+        try:
+            if index < len(data) and column_index < len(row) and row[column_index].strip() == '':
+                return index
+        except (IndexError, AttributeError):
+            continue
+    return None
+
+def extract_column(data, column_index):
+    """
+    Extract a specific column from the data.
+    
+    Parameters:
+    data (list): List of rows
+    column_index (int): Index of column to extract
+    
+    Returns:
+    list: List of values from the specified column
+    """
+    return [row[column_index] for row in data if column_index < len(row)]
+
 # Function to find the index of a specific value in a given column
 def find_index(column_data, value):
     for index, item in enumerate(column_data):
@@ -96,7 +128,6 @@ def printAny(data, column_name="Unnamed"):
             print(f"{index}       {value}")
     
     print(f"Name: {column_name}, Length: {length}, dtype: {data_type}")
-
 
 def printVec(data, column_name="Unnamed"):
     print("")  # Optional: print a newline for formatting
@@ -206,7 +237,6 @@ def solve_tdma(a, b, c, d, n):
 
     return x
 
-
 def transient1D(t_o, h_o, d_ins, lam_i, D, dx=0.005, dt=10.0, h_i=99.75):
     """
     Temperature distribution, transient 1D, BC 3d, implicit method.
@@ -291,6 +321,18 @@ def export_large_matrix(vectors, filename, value_delimiter=' ', vector_delimiter
         bool: True if successful, False if error occurred
     """
     try:
+        # Check if vectors list is empty
+        if not vectors:
+            raise ValueError("Empty vectors list provided")
+        
+        # Get expected length from first vector
+        expected_length = len(vectors[0])
+        
+        # Check all vectors have the same length
+        for i, vector in enumerate(vectors):
+            if len(vector) != expected_length:
+                raise ValueError(f"All vectors must have same length. Vector at index {i} has length {len(vector)}, expected {expected_length}")
+        
         with open(filename, 'w') as f:
             # Process vectors in chunks to avoid high memory usage
             for i in range(0, len(vectors), buffer_size):
@@ -299,9 +341,6 @@ def export_large_matrix(vectors, filename, value_delimiter=' ', vector_delimiter
                 # Build chunk content
                 chunk_content = []
                 for vector in chunk:
-                    if len(vector) != len(vectors[0]):
-                        raise ValueError(f"All vectors must have same length. Expected {len(vectors[0])}, got {len(vector)}")
-                    
                     # Efficient string joining for large vectors
                     row = value_delimiter.join(str(x) for x in vector)
                     chunk_content.append(row)
@@ -326,45 +365,35 @@ def export_large_matrix(vectors, filename, value_delimiter=' ', vector_delimiter
         print(f"Unexpected error: {e}")
         return False
 
-def main():
-    # Detect the encoding of the file
-    with open('Snow_Storage_Data.csv', 'rb') as rawdata:
-        result = chardet.detect(rawdata.read(100000))
-        encoding = result['encoding']
+from datetime import datetime
 
-    print(f"Encoding type is: {encoding}.")
-
-    # Create an empty list to store the data
-    data = []
-
-    # Define the indices of the columns you want to keep
-    columns_to_keep = []
-    for i in range(18):
-        columns_to_keep.append(i)  
-
-    # Read the CSV file with the detected encoding
-    with open('Snow_Storage_Data.csv', 'r', encoding=encoding) as file:
-        reader = csv.reader(file)
-        header = next(reader)  # Skip the first row (header)
-        for row in reader:
-            selected_row = [row[i] for i in columns_to_keep]
-            data.append(selected_row)
-
-    # Display the first column of each row
-    for row in data[:5]:
-        print(row[9])   # row[9] - YEAR column
-
-    # Find the index where the first NaN value appears in the 'YEAR.1' column
-    first_nan_index = None
-    for index, row in enumerate(data):
+def convert_datetime_to_unix(time_strings):
+    """Convert ISO format datetime strings to Unix timestamps with error handling."""
+    unix_timestamps = []
+    for i, time_str in enumerate(time_strings):
         try:
-            if row[9].strip() == '':
-                first_nan_index = index
-                break
-        except IndexError:
-            continue
+            dt = datetime.fromisoformat(time_str)
+            unix_timestamp = dt.timestamp()
+            unix_timestamps.append(unix_timestamp)
+        except ValueError as e:
+            print(f"Warning: Could not parse time string at index {i}: '{time_str}' - {e}")
+            # Option: append NaN or None, or skip entirely
+            unix_timestamps.append(float('nan'))
+    return unix_timestamps
 
-    print(first_nan_index)
+def main():
+    # Read CSV data (keeping first 18 columns)
+    data = read_csv_with_encoding('Snow_Storage_Data.csv', columns_to_keep=list(range(18)))
+    
+    # Display first few values from YEAR column (index 9)
+    print("First 5 values from YEAR column:")
+    year_values = extract_column(data, 9)[:5]
+    for value in year_values:
+        print(value)
+    
+    # Find first empty cell in YEAR.1 column (assuming it's also at index 9)
+    first_nan_index = find_first_empty_cell_index(data, 9)
+    print(f"\nFirst empty cell index in YEAR.1 column: {first_nan_index}")
 
     # Get '2023-04-01T00:00' format time data from 7th column
     time_column = [row[6] for row in data]
@@ -586,15 +615,18 @@ def main():
         Psat_vec.append(Psat_WV(air_temp_vec[i] + 273.15)/10.0) # hPa; 100/1000 to convert to hPa
     #printVec(Psat_vec, column_name=" Water vapour saturation pressure (hPa)")
 
-    # Extract the amount of RH precipitation column from the data
-    RH_perc_vec_raw = [row[17] for row in rdata]
-    RH_perc_vec = convert_to_type(RH_perc_vec_raw, dtype=float)
-    #printVec(RH_perc_vec, column_name="Relative Humidity Precipitation (m/h)")
+    # Extract the amount of RH column from the data
+    RH_vec_raw = [row[17] for row in rdata]
+    RH_vec = convert_to_type(RH_vec_raw, dtype=float)
+    printVec(RH_vec, column_name="Relative Humidity (m/h)")
+    
+    # Checking to find the right range
+    #printAny(time_column[period_start_in:period_end_in+1], column_name="Time")
 
     # Water steam pressure
     Pw_vec = []
-    for i in range(len(RH_perc_vec)):
-        Pw_vec.append(Psat_vec[i]*RH_perc_vec[i]/100.0) # kPa
+    for i in range(len(RH_vec)):
+        Pw_vec.append(Psat_vec[i]*RH_vec[i]/100.0) # kPa
     #printVec(Pw_vec, column_name = "Water steam pressure (kPa)")
 
     # Absolute humidity
@@ -680,15 +712,25 @@ def main():
 
     printVec(t_o)
 
+    # Filtered time column of the observable period
+    filt_Time = time_column[period_start_in:period_end_in+1]
+    # Usage
+    unix_timestamps = convert_datetime_to_unix(filt_Time)
+    printVec(unix_timestamps, column_name="UNIX")
+    print("")
+
     # Create matrix by pairing corresponding elements
-    export_matrix = [[t, h] for t, h in zip(t_o, h_o)] # column format 
+    #scaled_RH = [rh * 0.01 for rh in RH_vec] # Example: RH goes from 72 to 0.72
+    export_matrix = [[t, rh, to, ho] for t, rh, to, ho in zip(unix_timestamps, 
+                            RH_vec, t_o, h_o)] # column format 
 
     # Export with tab separation (good for columnar data)
-    export_large_matrix(export_matrix, "t_o_and_h_o.csv", value_delimiter=",")
+    export_large_matrix(export_matrix, "t_rh_to_ho.csv", value_delimiter=",")
     #export_large_matrix(export_matrix, "t_o_and_h_o.tsv", value_delimiter="\t")
 
     t_o_range = transient1D(t_o, h_o, d_ins, lam_i, D, dx=0.005, dt=10.0, h_i=h_i)
     #print(len(t_o_range[0]))
+
     # Print the temperature distribution for the first and last 5 hours
     for h in range(5):
         print(f"Hour {h}: Inner Temp = {t_o_range[-1][h]:.4e}, Outer Temp = {t_o_range[0][h]:.4e}")
