@@ -7,10 +7,11 @@ Download:
 >   git pull origin main
 """
 
-import chardet
+import csv
 import math
 import time
-import csv
+import chardet
+from datetime import datetime
 
 def detect_encoding(file_path):
     """
@@ -365,8 +366,6 @@ def export_large_matrix(vectors, filename, value_delimiter=' ', vector_delimiter
         print(f"Unexpected error: {e}")
         return False
 
-from datetime import datetime
-
 def convert_datetime_to_unix(time_strings):
     """Convert ISO format datetime strings to Unix timestamps with error handling."""
     unix_timestamps = []
@@ -448,6 +447,9 @@ def main():
     
     # Alternative version:
     # Improved efficiency with list comprehension
+
+    # T_sol_air_vec - The equivalent temperature that accounts for both air 
+    # temperature and solar radiation effects.
     T_sol_air_vec = [
         alpha * glob_solir / h + air_temp - T_cor_fact 
         for glob_solir, air_temp in 
@@ -524,6 +526,7 @@ def main():
     #    if air_temp > 0.0 
     #]
 
+    # Sensible heat flux from rainfall (in W/m²).
     # Initialize q_rain_vec with zeros
     q_rain_vec = [
         prec * rho_water * c_water * air_temp / 3600.0 if air_temp > 0.0 else 0.0
@@ -532,7 +535,7 @@ def main():
 
     # Display results
     #print(pos_temp_mark[:5])
-    #printVec(q_rain_vec, column_name="Hourly q rain (W/m^2)")
+    #printVec(q_rain_vec, column_name="Sensible heat flux from rainfall (W/m^2)")
 
     #------------------------------------------------------------------------
 
@@ -543,7 +546,7 @@ def main():
     
     v_rain_vec = [prec * A_surf * rho_water * c_water * air_temp / (L_f * rho_snow)
                   for prec, air_temp in zip(prec_vec, air_temp_vec)]
-    #printVec(v_rain_vec, column_name="Hourly melt rate from rain (m^3/h)")
+    #printVec(v_rain_vec, column_name="Hourly melt rate due to rain (m^3/h)")
 
     #------------------------------------------------------------------------
 
@@ -719,14 +722,25 @@ def main():
     printVec(unix_timestamps, column_name="UNIX")
     print("")
 
+    #--------------------------------------------------------------------------
+
     # Create matrix by pairing corresponding elements
     #scaled_RH = [rh * 0.01 for rh in RH_vec] # Example: RH goes from 72 to 0.72
-    export_matrix = [[t, rh, to, ho] for t, rh, to, ho in zip(unix_timestamps, 
-                            RH_vec, t_o, h_o)] # column format 
+    
+    #export_matrix = [[t, v, prec, rh, to, ho] for t, v, prec, rh, to, ho 
+    #                 in zip(unix_timestamps, air_vel_vec, 
+    #                     prec_vec, RH_vec, t_o, h_o)] # column format 
+    #export_large_matrix(export_matrix, "t_v_prec_rh_to_ho.csv", value_delimiter=",")
+    
+    export_matrix = [[t, rh, to, ho] for t, v, prec, rh, to, ho 
+                    in zip(unix_timestamps, air_vel_vec, 
+                        prec_vec, RH_vec, t_o, h_o)] # column format 
 
     # Export with tab separation (good for columnar data)
     export_large_matrix(export_matrix, "t_rh_to_ho.csv", value_delimiter=",")
-    #export_large_matrix(export_matrix, "t_o_and_h_o.tsv", value_delimiter="\t")
+    #export_large_matrix(export_matrix, "t_rh_to_ho.csv", value_delimiter="\t")
+
+    #--------------------------------------------------------------------------
 
     t_o_range = transient1D(t_o, h_o, d_ins, lam_i, D, dx=0.005, dt=10.0, h_i=h_i)
     #print(len(t_o_range[0]))
