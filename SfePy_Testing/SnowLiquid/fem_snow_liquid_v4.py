@@ -1,8 +1,13 @@
 r"""
 ==================================================================
-Step 3: Enhanced Coupled Heat-Liquid Transport System
+Step 4: Heat-Liquid-Vapor Coupled Transport System
 ------------------------------------------------------------------
-Improved coupling with more robust evaporation rate calculation
+Three-field coupled system:
+    Heat:   ∂T/∂t = α ∂²T/∂x² + L_v * m_evap/(ρ*cp) + q_dot/(ρ*cp)
+    Liquid: ∂Cl/∂t = D_l * ∂²Cl/∂x² - m_evap
+    Vapor:  ∂Cv/∂t = D_v * ∂²Cv/∂x² + m_evap
+
+where m_evap = f(T, Cl, Cv) couples all three equations
 ==================================================================
 """
 from __future__ import absolute_import
@@ -27,8 +32,9 @@ moist_cont = 50.0 # %
 rho_wet = rho_dry + moist_cont*10.0 # kg/m^3
 D = lam_i/(c_wet * rho_wet) # m^2/s
 
-# Enhanced parameters for liquid transport
+# Enhanced parameters for liquid and vapor transport
 D_l = 1e-8        # Liquid diffusion coefficient [m^2/s]
+D_v = 2e-5        # Vapor diffusion coefficient [m^2/s] (much faster than liquid)
 L_v = 2.45e6      # Latent heat of vaporization [J/kg]
 q_dot = 0.0       # Heat source [W/m^3]
 
@@ -37,17 +43,6 @@ k_evap = 1e-7     # Increased evaporation rate constant [1/s]
 T_ref = 0.0       # Reference temperature [°C]
 Cl_min = 0.001    # Minimum liquid content for evaporation [kg/m³]
 T_evap_max = 10.0 # Maximum temperature for linear evaporation model [°C]
-
-# Vapor transport parameters
-D_v = 2e-6       # Vapor diffusion coefficient [m^2/s] (example value)
-k_g = 1e-12      # Gas permeability [m^2] (example value)
-mu_g = 1.8e-5    # Gas dynamic viscosity [Pa*s] (example value)
-phi = 0.4        # Porosity (example value)
-p_a = 101325.0   # Atmospheric pressure [Pa]
-rho_a = 1.225    # Air density [kg/m^3]
-rho_v_ref = 0.01 # Reference vapor concentration [kg/m^3]
-h_v_i = 1e-6     # Inner vapor mass transfer coefficient [m/s]
-h_v_o = 2e-6     # Outer vapor mass transfer coefficient [m/s]
 
 def Psat_WV(T_K):
     """
@@ -93,6 +88,12 @@ cl_i = 0.01       # Inner reference liquid content [kg/m^3]
 cl_o = 0.02       # Outer reference liquid content [kg/m^3] 
 h_l_i = 1e-6      # Inner liquid mass transfer coefficient [m/s]
 h_l_o = 2e-6      # Outer liquid mass transfer coefficient [m/s]
+
+# Vapor boundary conditions (Robin type)
+cv_i = 0.005      # Inner reference vapor content [kg/m^3]
+cv_o = 0.008      # Outer reference vapor content [kg/m^3]
+h_v_i = 1e-5      # Inner vapor mass transfer coefficient [m/s]  
+h_v_o = 2e-5      # Outer vapor mass transfer coefficient [m/s]
 
 time, rh, t_o, h_o = read_temp_and_hcoeff_from_csv()
 
@@ -140,6 +141,35 @@ def get_rh(ts, coors, mode=None, **kwargs):
 
     return {'val': val}
 
+def get_cv_o(ts, coors, mode=None, **kwargs):
+    """
+    Time-dependent outer vapor reference content.
+    Based on relative humidity and saturation vapor pressure.
+    """
+    if mode != 'qp' or coors is None:
+        return {}
+
+    # Get current environmental conditions
+    hour_idx = min(int(ts.time / 3600), len(rh) - 1)
+    current_rh = rh[hour_idx] if hour_idx < len(rh) else 70.0
+    current_t = t_o[hour_idx] if hour_idx < len(t_o) else -5.0
+    
+    # Calculate saturation vapor pressure and actual vapor content
+    T_K = current_t + 273.15  # Convert to Kelvin
+    try:
+        Psat = Psat_WV(T_K)  # Saturation pressure in hPa
+        # Convert to vapor density (approximate ideal gas law)
+        # ρ_v = P * M / (R * T) where M ≈ 0.018 kg/mol, R = 8.314 J/(mol*K)
+        rho_v_sat = Psat * 100 * 0.018 / (8.314 * T_K)  # kg/m³
+        rho_v_actual = rho_v_sat * current_rh / 100.0
+        cv_adjusted = max(cv_o * 0.1, min(cv_o * 2.0, rho_v_actual))
+    except:
+        # Fallback if saturation pressure calculation fails
+        cv_adjusted = cv_o * (current_rh / 100.0)
+    
+    val = nm.full((coors.shape[0], 1, 1), cv_adjusted, dtype=nm.float64)
+
+    return {'val': val}
 def get_cl_o(ts, coors, mode=None, **kwargs):
     """
     Time-dependent outer liquid reference content.
@@ -161,6 +191,14 @@ def get_cl_o(ts, coors, mode=None, **kwargs):
     
     val = nm.full((coors.shape[0], 1, 1), cl_adjusted, dtype=nm.float64)
 
+    return {'val': val}
+
+def get_cv_i(ts, coors, mode=None, **kwargs):
+    """Time-dependent inner vapor reference content."""
+    if mode != 'qp' or coors is None:
+        return {}
+
+    val = nm.full((coors.shape[0], 1, 1), cv_i, dtype=nm.float64)
     return {'val': val}
 
 def get_evaporation_rate(ts, coors, mode=None, equations=None, term=None, 
@@ -199,14 +237,37 @@ def get_evaporation_rate(ts, coors, mode=None, equations=None, term=None,
                 T_vals = T_var.get_state_in_region(problem.domain.regions['Omega'])
                 Cl_vals = Cl_var.get_state_in_region(problem.domain.regions['Omega'])
                 
+                # Also get vapor content if available
+                Cv_vals = None
+                if 'Cv' in variables:
+                    Cv_var = variables['Cv']
+                    Cv_vals = Cv_var.get_state_in_region(problem.domain.regions['Omega'])
+                
                 # Temperature factor: linear increase from T_ref to T_evap_max
                 T_factor = nm.maximum(0, nm.minimum(1, (T_vals - T_ref)/(T_evap_max - T_ref)))
                 
                 # Liquid availability factor
                 Cl_factor = nm.maximum(0, (Cl_vals - Cl_min)/Cl_min)
                 
+                # Vapor saturation factor (reduces evaporation when vapor content is high)
+                if Cv_vals is not None:
+                    # Improved: Use local saturation vapor density via Psat_WV and ideal gas law
+                    T_K = T_vals + 273.15
+                    try:
+                        Psat = Psat_WV(T_K) * 100.0  # hPa to Pa
+                        # Ideal gas law: rho_v_sat = Psat * M / (R * T)
+                        M_wv = 0.018     # kg/mol, molar mass of water vapor
+                        R_gas = 8.314    # J/(mol*K)
+                        rho_v_sat = Psat * M_wv / (R_gas * T_K)  # kg/m³
+                        # Vapor factor: how close is Cv to saturation (limits evaporation)
+                        vapor_factor = nm.maximum(0, 1.0 - Cv_vals / rho_v_sat)
+                    except Exception as e:
+                        vapor_factor = nm.ones_like(T_vals)
+                else:
+                    vapor_factor = nm.ones_like(T_vals)
+                
                 # Combined evaporation rate
-                evap_rate = k_evap * humidity_factor * T_factor * Cl_factor
+                evap_rate = k_evap * humidity_factor * T_factor * Cl_factor * vapor_factor
                 
                 # Ensure we have the right shape for quadrature points
                 if len(evap_rate) != coors.shape[0]:
@@ -267,12 +328,16 @@ filename_mesh = UserMeshIO(mesh_hook)
 materials = {
     'mat': ({'lam': lam_i, 'rho_cp': rho_wet * c_wet},),
     'liquid_mat': ({'D_l': D_l},),
+    'vapor_mat': ({'D_v': D_v},),  # Added vapor diffusion material
     'h_out_dyn': 'get_h_o',
     'T_out_dyn': 'get_t_o', 
     'Cl_out_dyn': 'get_cl_o',
-    'rh_dyn': 'get_rh',  # Added for humidity tracking
-    'in_fixed': ({'h_in': h_i, 'T_in': t_i, 'h_l_in': h_l_i, 'Cl_in': cl_i},),
-    'out_fixed': ({'h_l_out': h_l_o},),
+    'Cv_out_dyn': 'get_cv_o',  # Added vapor boundary condition
+    'Cv_in_dyn': 'get_cv_i',   # Added inner vapor boundary condition
+    'rh_dyn': 'get_rh',
+    'in_fixed': ({'h_in': h_i, 'T_in': t_i, 'h_l_in': h_l_i, 'Cl_in': cl_i, 
+                  'h_v_in': h_v_i},),  # Added vapor transfer coeff
+    'out_fixed': ({'h_l_out': h_l_o, 'h_v_out': h_v_o},),  # Added vapor transfer coeff
     'evaporation_rate': 'get_evaporation_rate',
     'latent_heat_source': 'get_latent_heat_source',
     'heat_source': 'get_heat_source',
@@ -282,6 +347,8 @@ functions = {
     'get_h_o': (get_h_o,),
     'get_t_o': (get_t_o,),
     'get_cl_o': (get_cl_o,),
+    'get_cv_o': (get_cv_o,),  # Added vapor boundary function
+    'get_cv_i': (get_cv_i,),  # Added inner vapor boundary function
     'get_rh': (get_rh,),
     'get_evaporation_rate': (get_evaporation_rate,),
     'get_latent_heat_source': (get_latent_heat_source,),
@@ -294,18 +361,20 @@ regions = {
     'Gamma_Right': ('vertices in (x > %f)' % (d_ins - 0.00001), 'facet'), 
 }
 
-# Two fields: temperature and liquid content
+# Three fields: temperature, liquid content, and vapor content
 fields = {
     'temperature': ('real', 1, 'Omega', 1),
     'liquid': ('real', 1, 'Omega', 1),
+    'vapor': ('real', 1, 'Omega', 1), # Added vapor field
 }
-
 # Four variables with history for time derivatives
 variables = {
     'T': ('unknown field', 'temperature', 0, 1),
     's': ('test field', 'temperature', 'T'),
-    'Cl': ('unknown field', 'liquid', 1, 1), 
+    'Cl': ('unknown field', 'liquid', 1, 1),
     'r': ('test field', 'liquid', 'Cl'),
+    'Cv': ('unknown field', 'vapor', 2, 1),  # Fixed: history size = 2, order = 1
+    'w': ('test field', 'vapor', 'Cv') # Added vapor test field
 }
 
 # Boundary conditions
@@ -317,7 +386,7 @@ integrals = {
     'i': 1,
 }
 
-# Enhanced coupled equations with improved source terms
+# Three-field coupled equations: Heat-Liquid-Vapor
 equations = {
     'Heat': """dw_dot.i.Omega(mat.rho_cp, s, dT/dt)
              + dw_laplace.i.Omega(mat.lam, s, T)
@@ -332,14 +401,23 @@ equations = {
                = - dw_volume_lvf.i.Omega(evaporation_rate.val, r)
                  - dw_bc_newton.i.Gamma_Left(out_fixed.h_l_out, Cl_out_dyn.val, r, Cl)
                  - dw_bc_newton.i.Gamma_Right(in_fixed.h_l_in, in_fixed.Cl_in, r, Cl)
-               """
+               """,
+               
+    'Vapor': """dw_dot.i.Omega(w, dCv/dt)
+              + dw_laplace.i.Omega(vapor_mat.D_v, w, Cv)
+              = + dw_volume_lvf.i.Omega(evaporation_rate.val, w)
+                - dw_bc_newton.i.Gamma_Left(out_fixed.h_v_out, Cv_out_dyn.val, w, Cv)
+                - dw_bc_newton.i.Gamma_Right(in_fixed.h_v_in, Cv_in_dyn.val, w, Cv)
+              """
 }
 
-# Initial conditions for both fields
+# Initial conditions for all three fields
 ics = {
     'ic_T': ('Omega', {'T.0': 0.0}),
-    'ic_Cl': ('Omega', {'Cl.0': 0.015}),  # Initial liquid content
+    'ic_Cl': ('Omega', {'Cl.0': 0.015}),   # Initial liquid content
+    'ic_Cv': ('Omega', {'Cv.0': 0.006}),   # Initial vapor content
 }
+
 
 # Time parameters
 nr_hour = len(t_o)
@@ -366,61 +444,79 @@ solvers = {
     }),
 }
 
-def save_coupled_results(out, problem, state, extend=False):
-    """Save both temperature and liquid content with enhanced diagnostics."""
-    filename = os.path.join(problem.conf.options['output_dir'], "coupled_results_step3.csv")
     
+def save_coupled_results(out, problem, state, extend=False):
+    """Save temperature, liquid content, and vapor content with diagnostics."""
+    import os
+
+    filename = os.path.join(problem.conf.options['output_dir'], "coupled_results_step4.csv")
+    header = [
+        "Time (s)", "Node Index", "Position (m)", 
+        "Temperature (°C)", "Liquid Content (kg/m³)", "Vapor Content (kg/m³)",
+        "Evaporation Rate (kg/m³s)", "Latent Heat Effect (W/m³)",
+        "RH (%)", "T_outdoor (°C)"
+    ]
+
     # Get the full state vector
     state_vec = state.get_state()
     coors = problem.fields['temperature'].get_coor()
-    
-    # Split state vector into temperature and liquid parts
     n_dof = problem.fields['temperature'].n_nod
-    T_vals = state_vec[:n_dof]
-    Cl_vals = state_vec[n_dof:2*n_dof]
-    
+
+    # Handle different state vector configurations
+    if len(state_vec) == 3 * n_dof:
+        T_vals = state_vec[:n_dof]
+        Cl_vals = state_vec[n_dof:2*n_dof]
+        Cv_vals = state_vec[2*n_dof:3*n_dof]
+    elif len(state_vec) == 2 * n_dof:
+        T_vals = state_vec[:n_dof]
+        Cl_vals = state_vec[n_dof:2*n_dof]
+        Cv_vals = nm.zeros(n_dof)
+    else:
+        T_vals = state_vec[:n_dof]
+        Cl_vals = nm.zeros(n_dof)
+        Cv_vals = nm.zeros(n_dof)
+
     # Calculate evaporation rate for diagnostics
     try:
-        evap_data = get_evaporation_rate(problem.ts, coors[:, 0], 'qp', 
-                                       problem=problem)
+        evap_data = get_evaporation_rate(problem.ts, coors[:, 0], 'qp', problem=problem)
         evap_rates = evap_data['val'].flatten()
     except:
         evap_rates = nm.zeros(len(T_vals))
-    
+
     # Calculate latent heat effect
     try:
-        latent_data = get_latent_heat_source(problem.ts, coors[:, 0], 'qp', 
-                                           problem=problem)
+        latent_data = get_latent_heat_source(problem.ts, coors[:, 0], 'qp', problem=problem)
         latent_effects = latent_data['val'].flatten()
     except:
         latent_effects = nm.zeros(len(T_vals))
-    
+
     # Get current environmental conditions
     hour_idx = min(int(problem.ts.time / 3600), len(rh) - 1)
     current_rh = rh[hour_idx] if hour_idx < len(rh) else 70.0
     current_t_o = t_o[hour_idx] if hour_idx < len(t_o) else -5.0
-    
-    # Write headers only for the first timestep
-    if problem.ts.step == 0:
+
+    # Write header if file does not exist or is empty
+    file_needs_header = not os.path.exists(filename) or os.path.getsize(filename) == 0
+    if file_needs_header:
         with open(filename, 'w', newline='') as csvfile:
             writer = csv.writer(csvfile)
-            writer.writerow(["Time (s)", "Node Index", "Position (m)", 
-                           "Temperature (°C)", "Liquid Content (kg/m³)",
-                           "Evaporation Rate (kg/m³s)", "Latent Heat Effect (W/m³)",
-                           "RH (%)", "T_outdoor (°C)"])
+            writer.writerow(header)
 
-    # Save data at full-hour marks
+    # Append data for each node at full-hour marks
     if problem.ts.time % 3600 < problem.ts.dt:  
         with open(filename, 'a', newline='') as csvfile:
             writer = csv.writer(csvfile)
             for i, coord in enumerate(coors):
-                writer.writerow([problem.ts.time, i, coord[0], T_vals[i], Cl_vals[i],
-                               evap_rates[i], latent_effects[i], current_rh, current_t_o])
-    
+                writer.writerow([
+                    problem.ts.time, i, coord[0], T_vals[i], Cl_vals[i], Cv_vals[i],
+                    evap_rates[i], latent_effects[i], current_rh, current_t_o
+                ])
+
     # Print summary every hour for monitoring
     if problem.ts.time % 3600 < problem.ts.dt:
         print(f"\nHour {int(problem.ts.time/3600)}: T_avg={T_vals.mean():.2f}°C, "
               f"Cl_avg={Cl_vals.mean():.4f} kg/m³, "
+              f"Cv_avg={Cv_vals.mean():.4f} kg/m³, "
               f"Total_evap={evap_rates.sum():.2e} kg/m³s, "
               f"RH={current_rh:.1f}%")
 
@@ -432,5 +528,5 @@ options = {
     'ts': 'ts',
     'save_times': [3600*i for i in range(1, nr_of_hours + 1)],
     'post_process_hook': save_coupled_results,
-    'output_dir': './output_snow_step3',
+    'output_dir': './output_snow_step4',
 }
