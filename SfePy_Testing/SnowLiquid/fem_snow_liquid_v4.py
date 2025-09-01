@@ -12,7 +12,6 @@ where m_evap = f(T, Cl, Cv) couples all three equations
 ------------------------------------------------------------------
 Run this script with:
     sfepy-run fem_snow_liquid_v4.py
-
 ------------------------------------------------------------------
 For running in parallel, install:
     pip install mpi4py
@@ -73,22 +72,53 @@ def Psat_WV(T_K):
     C5 = -15.9618719
     C6 = 1.80122502
     teta = 1 - T_K / Tc
-    x = Tc / T_K * (C1 * teta + C2 * teta ** 1.5 + C3 * teta ** 3 + C4 * teta ** 3.5 + C5 * teta ** 4 + C6 * teta ** 7.5)
+    x = Tc / T_K * (C1*teta + C2*teta**1.5 + C3*teta**3 + C4*teta**3.5 + C5*teta**4 + C6*teta**7.5)
     x = math.exp(x) * Pc
     return x
 
-def read_temp_and_hcoeff_from_csv(filename="t_rh_to_ho.csv"):
-    """Read temperature and heat transfer coefficient data from CSV file."""
-    time, rh, t_o, h_o = [], [], [], []
-    with open(filename, 'r') as csvfile:
+def read_input_data(filename="DATA.csv"):
+    """
+    Read air temperature, air velocity, precipitation, global
+    solar irradation and relative humidity data from CSV file.
+    """
+    airTemp, airVel, prec, gloSolIr, relHum = [], [], [], [], []
+    with open('DATA.csv', 'r') as csvfile:
         csvreader = csv.reader(csvfile)
+        
+        # Skip the first row (header)
+        next(csvreader, None)  # This advances the reader past the first row
+        
         for row in csvreader:
-            time.append(float(row[0].strip()))  # time in seconds
-            rh.append(float(row[1].strip()))    # relative humidity %
-            t_o.append(float(row[2].strip()))   # outer layer temperature
-            h_o.append(float(row[3].strip()))   # outer layer convection 
+            airTemp.append(float(row[0].strip()))
+            airVel.append(float(row[1].strip()))
+            prec.append(float(row[2].strip()))
+            gloSolIr.append(float(row[3].strip()))
+            relHum.append(float(row[4].strip())) 
 
-    return time, rh, t_o, h_o
+    return airTemp, airVel, prec, gloSolIr, relHum
+
+# Read in data for sol-air temp and heat transf coef calculations
+airTemp, airVel, prec, gloSolIr, rh = read_input_data()
+
+# Calculation of equivalent sol-air temperature (in °C)
+h = 22.7         # Heat transfer coefficient at the external surface [W/(m^2K)]
+alpha = 0.8      # Solar light absorptivity
+T_cor_fact = 4.0 # Correction factor for horizontal surface [°C]
+t_o = [
+    alpha * glob_solir / h + air_temp - T_cor_fact 
+    for glob_solir, air_temp in 
+    zip(gloSolIr, airTemp)
+]
+
+# Calculation of convective heat transfer coefficient 
+h_o = [
+    6.0 + 4.0*vel 
+    if 
+        vel <= 5.0 
+    else 
+        7.41*(vel**0.78)
+    for vel in airVel
+]
 
 # Boundary conditions
 t_i = 0.0         # Inner temperature [°C]
@@ -106,7 +136,7 @@ cv_o = 0.008      # Outer reference vapor content [kg/m^3]
 h_v_i = 1e-5      # Inner vapor mass transfer coefficient [m/s]  
 h_v_o = 2e-5      # Outer vapor mass transfer coefficient [m/s]
 
-time, rh, t_o, h_o = read_temp_and_hcoeff_from_csv()
+#time, rh, t_o, h_o = read_temp_and_hcoeff_from_csv()
 
 def mesh_hook(mesh, mode):
     """Generate the 1D mesh."""
@@ -133,7 +163,7 @@ def get_h_o(ts, coors, mode=None, **kwargs):
     return {'val': val}
 
 def get_t_o(ts, coors, mode=None, **kwargs):
-    """Time-dependent ambient temperature."""
+    """Time-dependent sol-air temperature."""
     if mode != 'qp' or coors is None:
         return {}
 
@@ -181,6 +211,7 @@ def get_cv_o(ts, coors, mode=None, **kwargs):
     val = nm.full((coors.shape[0], 1, 1), cv_adjusted, dtype=nm.float64)
 
     return {'val': val}
+    
 def get_cl_o(ts, coors, mode=None, **kwargs):
     """
     Time-dependent outer liquid reference content.
@@ -192,7 +223,7 @@ def get_cl_o(ts, coors, mode=None, **kwargs):
     # Get current relative humidity and temperature
     hour_idx = min(int(ts.time / 3600), len(rh) - 1)
     current_rh = rh[hour_idx]
-    current_t = t_o[hour_idx]
+    #current_t = t_o[hour_idx]
     
     # Adjust reference liquid content based on humidity
     # Higher humidity -> higher reference liquid content
@@ -460,7 +491,7 @@ def save_coupled_results(out, problem, state, extend=False):
     """Save temperature, liquid content, and vapor content with diagnostics."""
     import os
 
-    filename = os.path.join(problem.conf.options['output_dir'], "coupled_results_step4.csv")
+    filename = os.path.join(problem.conf.options['output_dir'], "coupled_results_test.csv")
     header = [
         "Time (s)", "Node Index", "Position (m)", 
         "Temperature (°C)", "Liquid Content (kg/m³)", "Vapor Content (kg/m³)",
@@ -539,5 +570,5 @@ options = {
     'ts': 'ts',
     'save_times': [3600*i for i in range(1, nr_of_hours + 1)],
     'post_process_hook': save_coupled_results,
-    'output_dir': './output_snow_step4',
+    'output_dir': './output_snow_test',
 }
