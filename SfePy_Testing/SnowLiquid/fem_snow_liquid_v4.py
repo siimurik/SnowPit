@@ -8,6 +8,17 @@ Three-field coupled system:
     Vapor:  ∂Cv/∂t = D_v * ∂²Cv/∂x² + m_evap
 
 where m_evap = f(T, Cl, Cv) couples all three equations
+
+------------------------------------------------------------------
+Run this script with:
+    sfepy-run fem_snow_liquid_v4.py
+
+------------------------------------------------------------------
+For running in parallel, install:
+    pip install mpi4py
+
+Run on mulptiple cores with:
+    mpirun -n 4 sfepy-run --app=bvp-mM --debug-mpi fem_snow_liquid_v4.py
 ==================================================================
 """
 from __future__ import absolute_import
