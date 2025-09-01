@@ -307,7 +307,8 @@ def transient1D(t_o, h_o, d_ins, lam_i, D, dx=0.005, dt=10.0, h_i=99.75):
 
     return T_nh
 
-def export_large_matrix(vectors, filename, value_delimiter=' ', vector_delimiter='\n', buffer_size=1000):
+def export_large_matrix(vectors, filename, value_delimiter=' ', vector_delimiter='\n', 
+                       buffer_size=1000, column_names=None):
     """
     Efficiently exports large vectors as a matrix to a file (PyPy compatible).
     
@@ -317,6 +318,7 @@ def export_large_matrix(vectors, filename, value_delimiter=' ', vector_delimiter
         value_delimiter (str): Separator between values in a row (default: space)
         vector_delimiter (str): Separator between rows (default: newline)
         buffer_size (int): Number of rows to write at once (memory optimization)
+        column_names (list, optional): List of column names to write as first row
         
     Returns:
         bool: True if successful, False if error occurred
@@ -329,12 +331,23 @@ def export_large_matrix(vectors, filename, value_delimiter=' ', vector_delimiter
         # Get expected length from first vector
         expected_length = len(vectors[0])
         
+        # Validate column names if provided
+        if column_names is not None:
+            if len(column_names) != expected_length:
+                raise ValueError(f"Column names must match vector length. Got {len(column_names)}, expected {expected_length}")
+        
         # Check all vectors have the same length
         for i, vector in enumerate(vectors):
             if len(vector) != expected_length:
                 raise ValueError(f"All vectors must have same length. Vector at index {i} has length {len(vector)}, expected {expected_length}")
         
         with open(filename, 'w') as f:
+            # Write column names as first row if provided
+            if column_names is not None:
+                header_row = value_delimiter.join(str(x) for x in column_names)
+                f.write(header_row)
+                f.write(vector_delimiter)
+            
             # Process vectors in chunks to avoid high memory usage
             for i in range(0, len(vectors), buffer_size):
                 chunk = vectors[i:i+buffer_size]
@@ -622,6 +635,15 @@ def main():
     RH_vec_raw = [row[17] for row in rdata]
     RH_vec = convert_to_type(RH_vec_raw, dtype=float)
     printVec(RH_vec, column_name="Relative Humidity (m/h)")
+
+    #------------------------------------------------------------------------
+    column_names = ['Temp_C', 'Air_Vel_m/s', 'Prec_m/h', 'Glo_Sol_Ir_W/m2', 'RH_%']
+
+    export_OG = [[t, v, p, ir, rh] for t, v, p, ir, rh 
+            in zip(air_temp_vec, air_vel_vec, prec_vec, glob_solir_vec, RH_vec)] # column format 
+
+    # Export with tab separation (good for columnar data)
+    export_large_matrix(export_OG, "DATA.csv", value_delimiter=",", column_names=column_names)
     
     # Checking to find the right range
     #printAny(time_column[period_start_in:period_end_in+1], column_name="Time")
