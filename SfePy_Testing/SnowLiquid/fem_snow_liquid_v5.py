@@ -339,6 +339,7 @@ def get_cv_i(ts, coors, mode=None, **kwargs):
     if mode != 'qp' or coors is None: return {}
     val = nm.full((coors.shape[0], 1, 1), cv_i, dtype=nm.float64)
     return {'val': val}
+
 def get_evaporation_rate(ts, coors, mode=None, equations=None, term=None, problem=None, **kwargs):
     """Enhanced evaporation rate (same as before)"""
     if mode != 'qp' or coors is None: return {}
