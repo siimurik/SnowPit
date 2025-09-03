@@ -3,23 +3,68 @@ r"""
 Enhanced Heat-Liquid-Vapor Coupled Transport System with 
 Additional Moisture Movement Terms Based on Clay Research
 ------------------------------------------------------------------
-Enhanced system includes:
-1. Pressure-driven liquid flow (Darcy's law)
-2. Osmotic/capillary pressure effects
-3. Soret effect (thermal diffusion)
-4. Cross-coupling between temperature and moisture
-5. Shrinkage effects on transport properties
+Three-field coupled system with enhanced physics
+------------------------------------------------------------------
+GOVERNING EQUATIONS:
+Heat Equation (Temperature T) ,Liquid Equation (Liquid Content Cl),
+Vapor Equation (Vapor Content Cv).
 
-Based on equations from moisture movement research:
-- Pressure diffusion: J_m = -D_p * ∇p
-- Thermal diffusion: J_m = -D_t * ∇T  (Soret effect)
-- Heat-moisture coupling: J_h = -k_c * ∇C
+    Heat:   ρcp ∂T/∂t = λ ∂²T/∂x² + k_c ∂Cl/∂x
+    Liquid: ∂Cl/∂t = D_eff(Cl) ∂²Cl/∂x² + D_p ∂²p/∂x² + D_t ∂²T/∂x² - m_evap
+    Vapor:  ∂Cv/∂t = D_v ∂²Cv/∂x² + m_evap
+------------------------------------------------------------------
+ENHANCED COUPLING MECHANISMS:
+1. Pressure-driven liquid flow: 
+    p = p_capillary(Cl, T) + p_osmotic(Cl, T) - p_atm
+  where:
+    - p_capillary: 2σcos(θ)/r_eff(Cl) with temperature-dependent 
+      surface tension
+    - p_osmotic: Van't Hoff approximation π = cRT
+2. Soret effect (thermal diffusion): D_t ∂T/∂x drives moisture 
+   movement
+3. Heat-moisture coupling: k_c ∂Cl/∂x contributes to heat flux
+4. Shrinkage-modified diffusivity: 
+    D_eff(Cl) = D_l * (1 - α_shrink * Cl)
+5. Enhanced evaporation: m_evap = k_evap * (1 - RH) with 
+   humidity dependence
+------------------------------------------------------------------
+BOUNDARY CONDITIONS:
 
+Left Boundary (x = 0, Outer Surface):
+    Heat:        -λ ∂T/∂x = h_o(t) [T - T_o(t)]
+    Liquid:      -D_eff ∂Cl/∂x = h_l_o [Cl - Cl_o(t)]  
+    Vapor:       -D_v ∂Cv/∂x = h_v_o [Cv - Cv_o(t)]
+
+Right Boundary (x = d_ins, Inner Surface):
+    Heat:        -λ ∂T/∂x = h_i [T - T_i]
+    Liquid:      -D_eff ∂Cl/∂x = h_l_i [Cl - Cl_i]
+    Vapor:       -D_v ∂Cv/∂x = h_v_i [Cv - Cv_i]
+
+Time-dependent outer boundary conditions:
+    h_o(t), T_o(t), Cl_o(t), Cv_o(t) from environmental data
+
+Fixed inner boundary conditions:
+    h_i = 99.75, T_i = 0°C, Cl_i = 0.01, Cv_i = 0.005
+------------------------------------------------------------------
+MATERIAL PROPERTIES:
+    λ = 0.32 W/(mK), ρcp = ρ_wet * c_wet, D_l = 1e-8 m²/s, D_v = 2e-5 m²/s
+    D_p = 1e-9 m²/(Pa·s), D_t = 5e-10 m²/(K·s), k_c = 0.1 W·s/(m·K·kg)
+------------------------------------------------------------------
+CODE EXECUTION INSTRUCTIONS:
+
+Run this script with:
+    sfepy-run fem_snow_liquid_v5.py
+
+For running in parallel, install:
+    pip install mpi4py
+
+Run on mulptiple cores with:
+    mpirun -n 4 sfepy-run --app=bvp-mM --debug-mpi fem_snow_liquid_v5.py
 ==================================================================
 """
+
 from __future__ import absolute_import
 import numpy as nm
-import math
 from sfepy.discrete.fem import Mesh
 from sfepy.discrete.fem.meshio import UserMeshIO
 import csv
@@ -75,8 +120,9 @@ def Psat_WV(T_K):
     C5 = -15.9618719
     C6 = 1.80122502
     teta = 1 - T_K / Tc
-    x = Tc / T_K * (C1*teta + C2*teta**1.5 + C3*teta**3 + C4*teta**3.5 + C5*teta**4 + C6*teta**7.5)
-    x = math.exp(x) * Pc
+    x = Tc / T_K * (C1*teta + C2*teta**1.5 + C3*teta**3 + C4*teta**3.5 + \
+                    C5*teta**4 + C6*teta**7.5)
+    x = nm.exp(x) * Pc
     return x
 
 def calculate_capillary_pressure(Cl, T):
@@ -115,7 +161,7 @@ def calculate_osmotic_pressure(Cl, T):
     return pi_osmotic
 
 def get_pressure_gradient_source(ts, coors, mode=None, equations=None, term=None,
-                               problem=None, **kwargs):
+                                problem=None, **kwargs):
     """
     Calculate pressure-driven moisture flux term: ∇·(D_p ∇p)
     where p = p_capillary + p_osmotic
@@ -231,8 +277,9 @@ def get_heat_moisture_coupling(ts, coors, mode=None, equations=None, term=None,
     val = coupling_effect.reshape((coors.shape[0], 1, 1))
     return {'val': val}
 
-def get_shrinkage_modified_diffusivity(ts, coors, mode=None, equations=None, term=None,
-                                     problem=None, **kwargs):
+def get_shrinkage_modified_diffusivity(ts, coors, mode=None, equations=None, 
+                                       term=None, problem=None, **kwargs):
+                                    
     """
     Shrinkage-modified diffusion coefficient
     D_eff = D_l * (1 - α_shrink * w)
@@ -268,7 +315,8 @@ def get_shrinkage_modified_diffusivity(ts, coors, mode=None, equations=None, ter
 
 # Keep all existing functions (read_input_data, get_h_o, etc.) from original code
 def read_input_data(filename="DATA.csv"):
-    """Read air temperature, air velocity, precipitation, global solar irradation and relative humidity data from CSV file."""
+    """Read air temperature, air velocity, precipitation, global solar irradation 
+    and relative humidity data from CSV file."""
     airTemp, airVel, prec, gloSolIr, relHum = [], [], [], [], []
     with open('DATA.csv', 'r') as csvfile:
         csvreader = csv.reader(csvfile)
@@ -281,26 +329,16 @@ def read_input_data(filename="DATA.csv"):
             relHum.append(float(row[4].strip())) 
     return airTemp, airVel, prec, gloSolIr, relHum
 
-# Read data and calculate boundary conditions (same as before)
-airTemp, airVel, prec, gloSolIr, rh = read_input_data()
-
-h = 22.7; alpha = 0.8; T_cor_fact = 4.0
-t_o = [alpha * glob_solir / h + air_temp - T_cor_fact for glob_solir, air_temp in zip(gloSolIr, airTemp)]
-h_o = [6.0 + 4.0*vel if vel <= 5.0 else 7.41*(vel**0.78) for vel in airVel]
-
-# Boundary conditions (same as before)
-t_i = 0.0; h_i = 99.75
-cl_i = 0.01; cl_o = 0.02; h_l_i = 1e-6; h_l_o = 2e-6
-cv_i = 0.005; cv_o = 0.008; h_v_i = 1e-5; h_v_o = 2e-5
-
 # Keep existing boundary condition functions (get_h_o, get_t_o, etc.)
 def get_h_o(ts, coors, mode=None, **kwargs):
+    """Time-dependent heat transfer coefficient."""
     if mode != 'qp' or coors is None: return {}
     hour_idx = min(int(ts.time / 3600), len(h_o) - 1)
     val = nm.full((coors.shape[0], 1, 1), h_o[hour_idx], dtype=nm.float64)
     return {'val': val}
 
 def get_t_o(ts, coors, mode=None, **kwargs):
+    """Time-dependent sol-air temperature."""
     if mode != 'qp' or coors is None: return {}
     hour_idx = min(int(ts.time / 3600), len(t_o) - 1)
     val = nm.full((coors.shape[0], 1, 1), t_o[hour_idx], dtype=nm.float64)
@@ -340,14 +378,61 @@ def get_cv_i(ts, coors, mode=None, **kwargs):
     val = nm.full((coors.shape[0], 1, 1), cv_i, dtype=nm.float64)
     return {'val': val}
 
-def get_evaporation_rate(ts, coors, mode=None, equations=None, term=None, problem=None, **kwargs):
-    """Enhanced evaporation rate (same as before)"""
-    if mode != 'qp' or coors is None: return {}
-    # ... (same implementation as before)
+def get_evaporation_rate(ts, coors, mode=None, equations=None, term=None, 
+                        problem=None, **kwargs):
+    """
+    Enhanced temperature and liquid-content dependent evaporation rate.
+    Includes humidity effects using SfePy API.
+    
+    Evaporation model:
+    m_evap = k_evap * f_humidity * f_temperature * f_liquid * f_vapor
+    
+    where:
+    - f_humidity = (1 - RH/100) accounts for ambient humidity
+    - f_temperature = max(0, (T - T_ref)/(T_evap_max - T_ref)) 
+    - f_liquid = max(0, (Cl - Cl_min)/Cl_min) accounts for available liquid
+    - f_vapor = 1 - Cv/rho_v_sat limits evaporation near saturation
+    """
+    if mode != 'qp' or coors is None:
+        return {}
+    
+    # Get current relative humidity from environmental data
     hour_idx = min(int(ts.time / 3600), len(rh) - 1)
-    current_rh = rh[hour_idx] if hour_idx < len(rh) else 70.0
+    current_rh = rh[hour_idx]
     humidity_factor = max(0, 1.0 - current_rh/100.0)
-    evap_rate = nm.full(coors.shape[0], k_evap * humidity_factor * 0.5)
+    
+    # Get current state variables
+    variables = problem.get_variables()
+    T_var = variables['T']
+    Cl_var = variables['Cl']
+    Cv_var = variables['Cv']
+    
+    # Get state vectors
+    T_vals = T_var.get_state_in_region(problem.domain.regions['Omega'])
+    Cl_vals = Cl_var.get_state_in_region(problem.domain.regions['Omega'])
+    Cv_vals = Cv_var.get_state_in_region(problem.domain.regions['Omega'])
+    
+    # Temperature factor: linear increase from T_ref to T_evap_max
+    T_factor = nm.maximum(0, nm.minimum(1, (T_vals - T_ref)/(T_evap_max - T_ref)))
+    
+    # Liquid availability factor
+    Cl_factor = nm.maximum(0, (Cl_vals - Cl_min)/Cl_min)
+    
+    # Vapor saturation factor (reduces evaporation when vapor content is high)
+    T_K = T_vals + 273.15
+    Psat = Psat_WV(T_K) * 100.0  # hPa to Pa
+    M_wv = 0.018     # kg/mol, molar mass of water vapor
+    R_gas = 8.314    # J/(mol*K)
+    rho_v_sat = Psat * M_wv / (R_gas * T_K)  # kg/m³
+    vapor_factor = nm.maximum(0, 1.0 - Cv_vals / rho_v_sat)
+    
+    # Combined evaporation rate
+    evap_rate = k_evap * humidity_factor * T_factor * Cl_factor * vapor_factor
+    
+    # Ensure we have the right shape for quadrature points
+    if len(evap_rate) != coors.shape[0]:
+        evap_rate = nm.full(coors.shape[0], evap_rate.mean())
+    
     val = evap_rate.reshape((coors.shape[0], 1, 1))
     return {'val': val}
 
@@ -363,6 +448,57 @@ def mesh_hook(mesh, mode):
     elif mode == 'write':
         pass
 
+def calculate_pressure_gradient_effect(Cl_vals, T_vals):
+    """Calculate pressure gradient effect using finite differences."""
+    p_cap = calculate_capillary_pressure(Cl_vals, T_vals)
+    p_osm = calculate_osmotic_pressure(Cl_vals, T_vals)
+    total_pressure = p_cap + p_osm - p_atm
+    
+    pressure_gradient_effect = nm.zeros_like(total_pressure)
+    for i in range(len(total_pressure)):
+        if i == 0:
+            pressure_gradient_effect[i] = D_p * (total_pressure[i+1] - total_pressure[i]) / dx
+        elif i == len(total_pressure) - 1:
+            pressure_gradient_effect[i] = D_p * (total_pressure[i] - total_pressure[i-1]) / dx
+        else:
+            pressure_gradient_effect[i] = D_p * (total_pressure[i+1] - total_pressure[i-1]) / (2 * dx)
+    
+    return pressure_gradient_effect
+
+def calculate_soret_effect(T_vals):
+    """Calculate Soret effect (thermal diffusion) using finite differences."""
+    soret_effect = nm.zeros_like(T_vals)
+    for i in range(len(T_vals)):
+        if i == 0:
+            soret_effect[i] = D_t * (T_vals[i+1] - T_vals[i]) / dx
+        elif i == len(T_vals) - 1:
+            soret_effect[i] = D_t * (T_vals[i] - T_vals[i-1]) / dx
+        else:
+            soret_effect[i] = D_t * (T_vals[i+1] - T_vals[i-1]) / (2 * dx)
+    
+    return soret_effect
+
+###############################################################################
+#                                MAIN SECTION                                 #
+###############################################################################
+
+# Read data and calculate boundary conditions (same as before)
+airTemp, airVel, prec, gloSolIr, rh = read_input_data()
+
+# Calculation of equivalent sol-air temperature (in °C)
+h = 22.7; alpha = 0.8; T_cor_fact = 4.0
+t_o = [alpha * glob_solir / h + air_temp - T_cor_fact for glob_solir, air_temp in zip(gloSolIr, airTemp)]
+
+# Calculation of convective heat transfer coefficient 
+h_o = [6.0 + 4.0*vel if vel <= 5.0 else 7.41*(vel**0.78) for vel in airVel]
+
+# Boundary conditions (same as before)
+t_i = 0.0; h_i = 99.75
+cl_i = 0.01; cl_o = 0.02; h_l_i = 1e-6; h_l_o = 2e-6
+cv_i = 0.005; cv_o = 0.008; h_v_i = 1e-5; h_v_o = 2e-5
+
+# Mesh is generated at runtime by mesh_hook function - allows parameterized 1D domain
+# (length = d_ins, resolution = dx) without needing external mesh files
 filename_mesh = UserMeshIO(mesh_hook)
 
 # Enhanced materials with new transport coefficients
@@ -473,6 +609,8 @@ ics = {
 nr_of_hours = 2
 stop = nr_of_hours * 3600.0
 dt = 10.0
+nr_of_steps = int(stop/dt)
+
 
 solvers = {
     'ls': ('ls.scipy_direct', {}),
@@ -486,7 +624,7 @@ solvers = {
         't0': 0.0,
         't1': stop,
         'dt': dt,
-        'n_step': int(stop/dt),
+        'n_step': nr_of_steps,
         'verbose': 1,
     }),
 }
@@ -521,6 +659,8 @@ def save_enhanced_results(out, problem, state, extend=False):
     p_cap = calculate_capillary_pressure(Cl_vals, T_vals)
     p_osm = calculate_osmotic_pressure(Cl_vals, T_vals)
     shrinkage_factors = nm.maximum(0.1, 1.0 - alpha_shrink * Cl_vals)
+    pressure_gradient_effect = calculate_pressure_gradient_effect(Cl_vals, T_vals)
+    soret_effect = calculate_soret_effect(T_vals)
     
     # Write results every hour
     if problem.ts.time % 3600 < problem.ts.dt:
@@ -535,7 +675,10 @@ def save_enhanced_results(out, problem, state, extend=False):
             for i, coord in enumerate(coors):
                 writer.writerow([
                     problem.ts.time, i, coord[0], T_vals[i], Cl_vals[i], Cv_vals[i],
-                    p_cap[i], p_osm[i], 0.0, 0.0, shrinkage_factors[i]  # Simplified output
+                    p_cap[i], p_osm[i], 
+                    pressure_gradient_effect[i],
+                    soret_effect[i],
+                    shrinkage_factors[i]
                 ])
         
         print(f"Hour {int(problem.ts.time/3600)}: Enhanced physics simulation")
