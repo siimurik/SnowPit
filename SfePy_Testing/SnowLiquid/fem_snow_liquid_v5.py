@@ -631,7 +631,6 @@ solvers = {
 
 def save_enhanced_results(out, problem, state, extend=False):
     """Enhanced results saving with additional physics terms."""
-    import os
     
     filename = os.path.join(problem.conf.options['output_dir'], "enhanced_moisture_results.csv")
     header = [

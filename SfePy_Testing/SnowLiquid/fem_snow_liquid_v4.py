@@ -489,7 +489,6 @@ solvers = {
     
 def save_coupled_results(out, problem, state, extend=False):
     """Save temperature, liquid content, and vapor content with diagnostics."""
-    import os
 
     filename = os.path.join(problem.conf.options['output_dir'], "coupled_results_test.csv")
     header = [

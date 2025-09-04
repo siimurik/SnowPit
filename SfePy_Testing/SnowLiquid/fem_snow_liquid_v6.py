@@ -53,171 +53,15 @@ MATERIAL PROPERTIES:
 CODE EXECUTION INSTRUCTIONS:
 
 Run this script with:
-    sfepy-run fem_snow_liquid_v5.py
+    sfepy-run fem_snow_liquid_v6.py
 
 For running in parallel, install:
     pip install mpi4py
 
 Run on mulptiple cores with:
-    mpirun -n 4 sfepy-run --app=bvp-mM --debug-mpi fem_snow_liquid_v5.py
+    mpirun -n 4 sfepy-run --app=bvp-mM --debug-mpi fem_snow_liquid_v6.py
 ==================================================================
 """
-
-###############################################################################
-###############################################################################
-###############################################################################
-
-# TODO! Fix coors.shape problem!!!!
-
-def interpolate_nodes_to_qp_1d(node_values, n_qp):
-    """
-    Interpolate nodal values to quadrature points for 1D linear elements.
-    
-    For 1D linear elements, quadrature points are typically at element centers.
-    
-    Parameters:
-    -----------
-    node_values : array, shape (n_nodes,)
-        Values at mesh nodes
-    n_qp : int
-        Number of quadrature points (should equal number of elements)
-        
-    Returns:
-    --------
-    qp_values : array, shape (n_qp,)
-        Values interpolated to quadrature points
-    """
-    n_nodes = len(node_values)
-    n_elements = n_nodes - 1
-    
-    if n_qp != n_elements:
-        raise ValueError(f"Expected {n_elements} quadrature points, got {n_qp}")
-    
-    qp_values = nm.zeros(n_qp)
-    
-    # For 1D linear elements with quadrature point at element center
-    # QP value = 0.5 * (left_node + right_node)
-    for i in range(n_elements):
-        qp_values[i] = 0.5 * (node_values[i] + node_values[i + 1])
-    
-    return qp_values
-
-def get_evaporation_rate_corrected(ts, coors, mode=None, equations=None, term=None, 
-                                 problem=None, **kwargs):
-    """
-    Corrected evaporation rate function with proper node-to-QP interpolation.
-    """
-    if mode != 'qp' or coors is None:
-        return {}
-    
-    # Get current relative humidity from environmental data
-    hour_idx = min(int(ts.time / 3600), len(rh) - 1)
-    current_rh = rh[hour_idx]
-    humidity_factor = max(0, 1.0 - current_rh/100.0)
-    
-    # Get current state variables (these are at NODES)
-    variables = problem.get_variables()
-    T_var = variables['T']
-    Cl_var = variables['Cl']
-    Cv_var = variables['Cv']
-    
-    # Get state vectors at nodes
-    T_vals_nodes = T_var.get_state_in_region(problem.domain.regions['Omega'])
-    Cl_vals_nodes = Cl_var.get_state_in_region(problem.domain.regions['Omega'])
-    Cv_vals_nodes = Cv_var.get_state_in_region(problem.domain.regions['Omega'])
-    
-    n_qp = coors.shape[0]  # Number of quadrature points
-    
-    print(f"Debug: Nodes: {len(T_vals_nodes)}, QP: {n_qp}")
-    
-    try:
-        # Interpolate from nodes to quadrature points
-        T_vals = interpolate_nodes_to_qp_1d(T_vals_nodes, n_qp)
-        Cl_vals = interpolate_nodes_to_qp_1d(Cl_vals_nodes, n_qp)  
-        Cv_vals = interpolate_nodes_to_qp_1d(Cv_vals_nodes, n_qp)
-        
-        print(f"Interpolation successful: T range = [{T_vals.min():.3f}, {T_vals.max():.3f}]")
-        
-    except Exception as e:
-        print(f"Interpolation failed: {e}")
-        print("Using element-wise averages as fallback")
-        
-        # Fallback: use averages (your current approach)
-        T_vals = nm.full(n_qp, T_vals_nodes.mean())
-        Cl_vals = nm.full(n_qp, Cl_vals_nodes.mean()) 
-        Cv_vals = nm.full(n_qp, Cv_vals_nodes.mean())
-    
-    # Calculate evaporation factors (now at quadrature points)
-    T_factor = nm.maximum(0, nm.minimum(1, (T_vals - T_ref)/(T_evap_max - T_ref)))
-    Cl_factor = nm.maximum(0, (Cl_vals - Cl_min)/Cl_min)
-    
-    T_K = T_vals + 273.15
-    Psat = Psat_WV(T_K) * 100.0
-    M_wv = 0.018
-    R_gas = 8.314
-    rho_v_sat = Psat * M_wv / (R_gas * T_K)
-    vapor_factor = nm.maximum(0, 1.0 - Cv_vals / rho_v_sat)
-    
-    # Combined evaporation rate
-    evap_rate = k_evap * humidity_factor * T_factor * Cl_factor * vapor_factor
-    
-    print(f"Evaporation rate range: [{evap_rate.min():.2e}, {evap_rate.max():.2e}]")
-    
-    # Should now have correct shape
-    assert len(evap_rate) == coors.shape[0], f"Shape mismatch: {len(evap_rate)} != {coors.shape[0]}"
-    
-    val = evap_rate.reshape((coors.shape[0], 1, 1))
-    return {'val': val}
-
-def get_pressure_gradient_source_corrected(ts, coors, mode=None, equations=None, term=None,
-                                         problem=None, **kwargs):
-    """
-    Corrected pressure gradient function with proper interpolation.
-    """
-    if mode != 'qp' or coors is None:
-        return {}
-    
-    try:
-        if problem is not None and hasattr(problem, 'get_variables'):
-            variables = problem.get_variables()
-            
-            if 'T' in variables and 'Cl' in variables:
-                T_var = variables['T']
-                Cl_var = variables['Cl']
-                
-                # Get nodal values
-                T_vals_nodes = T_var.get_state_in_region(problem.domain.regions['Omega'])
-                Cl_vals_nodes = Cl_var.get_state_in_region(problem.domain.regions['Omega'])
-                
-                n_qp = coors.shape[0]
-                
-                # Interpolate to quadrature points
-                T_vals = interpolate_nodes_to_qp_1d(T_vals_nodes, n_qp)
-                Cl_vals = interpolate_nodes_to_qp_1d(Cl_vals_nodes, n_qp)
-                
-                # Calculate pressures at QP
-                p_cap = calculate_capillary_pressure(Cl_vals, T_vals)
-                p_osm = calculate_osmotic_pressure(Cl_vals, T_vals)
-                total_pressure = p_cap + p_osm - p_atm
-                
-                # Pressure gradient effect
-                pressure_effect = D_p * total_pressure / (mu_water * dx**2)
-                
-            else:
-                pressure_effect = nm.zeros(coors.shape[0])
-        else:
-            pressure_effect = nm.zeros(coors.shape[0])
-            
-    except Exception as e:
-        print(f"Pressure calculation failed: {e}")
-        pressure_effect = nm.zeros(coors.shape[0])
-    
-    val = pressure_effect.reshape((coors.shape[0], 1, 1))
-    return {'val': val}
-
-###############################################################################
-###############################################################################
-###############################################################################
 
 from __future__ import absolute_import
 import numpy as nm
@@ -225,8 +69,6 @@ from sfepy.discrete.fem import Mesh
 from sfepy.discrete.fem.meshio import UserMeshIO
 import csv
 import os
-
-
 
 # Physical parameters
 d_ins = 0.1       # Insulation thickness [m]
@@ -363,7 +205,7 @@ def get_pressure_gradient_source(ts, coors, mode=None, equations=None, term=None
     return {'val': val}
 
 def get_soret_effect(ts, coors, mode=None, equations=None, term=None,
-                    problem=None, **kwargs):
+                        problem=None, **kwargs):
     """
     Calculate Soret effect (thermal diffusion): D_t * ∇T
     This represents moisture movement due to temperature gradients
@@ -371,72 +213,24 @@ def get_soret_effect(ts, coors, mode=None, equations=None, term=None,
     if mode != 'qp' or coors is None:
         return {}
     
-    try:
-        if problem is not None and hasattr(problem, 'get_variables'):
-            variables = problem.get_variables()
-            
-            if 'T' in variables:
-                T_var = variables['T']
-                T_vals = T_var.get_state_in_region(problem.domain.regions['Omega'])
-                
-                # Approximate temperature gradient (simplified for 1D)
-                if len(T_vals) > 1:
-                    T_grad = nm.gradient(T_vals) / dx
-                    # Thermal diffusion effect
-                    soret_effect = D_t * T_grad
-                    
-                    if len(soret_effect) != coors.shape[0]:
-                        soret_effect = nm.full(coors.shape[0], soret_effect.mean())
-                else:
-                    soret_effect = nm.zeros(coors.shape[0])
-            else:
-                soret_effect = nm.zeros(coors.shape[0])
-        else:
-            soret_effect = nm.zeros(coors.shape[0])
-            
-    except Exception as e:
-        soret_effect = nm.zeros(coors.shape[0])
+    # Get temperature field
+    variables = problem.get_variables()
+    T_var = variables['T']
+    T_vals = T_var.get_state_in_region(problem.domain.regions['Omega'])
+    print("T_vals shape", T_vals.shape)
     
-    val = soret_effect.reshape((coors.shape[0], 1, 1))
+    # Flatten the 2D array to 1D for gradient calculation
+    T_vals_flat = T_vals.flatten()
+    print(f"T_vals shape: {T_vals.shape}, flattened: {T_vals_flat.shape}")
+
+    # Use the global dx parameter directly
+    print(f"Calculating gradient with {len(T_vals_flat)} points, dx={dx}")
+    T_grad = nm.gradient(T_vals_flat) / dx
+    soret_effect = D_t * T_grad
+    
+    val = soret_effect.reshape((soret_effect.shape[0], 1, 1))
     return {'val': val}
 
-def get_heat_moisture_coupling(ts, coors, mode=None, equations=None, term=None,
-                             problem=None, **kwargs):
-    """
-    Heat-moisture coupling term: k_c * ∇C
-    This represents heat flux due to moisture gradients
-    """
-    if mode != 'qp' or coors is None:
-        return {}
-    
-    try:
-        if problem is not None and hasattr(problem, 'get_variables'):
-            variables = problem.get_variables()
-            
-            if 'Cl' in variables:
-                Cl_var = variables['Cl']
-                Cl_vals = Cl_var.get_state_in_region(problem.domain.regions['Omega'])
-                
-                # Approximate moisture gradient (simplified for 1D)
-                if len(Cl_vals) > 1:
-                    Cl_grad = nm.gradient(Cl_vals) / dx
-                    # Heat-moisture coupling effect
-                    coupling_effect = k_c * Cl_grad / (rho_wet * c_wet)  # Normalize
-                    print("coupling effect", coupling_effect, coupling_effect.shape)
-                    if len(coupling_effect) != coors.shape[0]:
-                        coupling_effect = nm.full(coors.shape[0], coupling_effect.mean())
-                else:
-                    coupling_effect = nm.zeros(coors.shape[0])
-            else:
-                coupling_effect = nm.zeros(coors.shape[0])
-        else:
-            coupling_effect = nm.zeros(coors.shape[0])
-            
-    except Exception as e:
-        coupling_effect = nm.zeros(coors.shape[0])
-    
-    val = coupling_effect.reshape((coors.shape[0], 1, 1))
-    return {'val': val}
 
 def get_heat_moist_coup(ts, coors, mode=None, equations=None, term=None,
                              problem=None, **kwargs):
@@ -450,81 +244,41 @@ def get_heat_moist_coup(ts, coors, mode=None, equations=None, term=None,
     # Get variables
     variables = problem.get_variables()
     Cl_var = variables['Cl']
-    Cl_nodal = Cl_var()  # Get all 21 nodal values
+    Cl_vals = Cl_var.get_state_in_region(problem.domain.regions['Omega'])
+    Cl_vals_flat = Cl_vals.flatten() # 2D to 1D for nm.gradient() 
     
-    # Calculate gradient at NODES (where we have enough points)
-    nodal_coors = nm.linspace(0.0, d_ins, 21)
-    dx_nodal = nodal_coors[1] - nodal_coors[0]  # Actual nodal spacing
-    
-    Cl_grad_nodal = nm.gradient(Cl_nodal) / dx_nodal  # Gradient at 21 nodes
-    
-    # Now interpolate gradient to quadrature points
-    Cl_grad_qp = 0.5 * (Cl_grad_nodal[:-1] + Cl_grad_nodal[1:])  # 20 values
-    
+    Cl_grad = nm.gradient(Cl_vals_flat) / dx
     # Heat-moisture coupling effect
-    coupling_effect = k_c * Cl_grad_qp / (rho_wet * c_wet)
+    coupling_effect = k_c * Cl_grad / (rho_wet * c_wet)  # Normalize
     
-    val = coupling_effect.reshape((coors.shape[0], 1, 1))
-    return {'val': val}
-
-def get_shrinkage_modified_diffusivity(ts, coors, mode=None, equations=None, 
-                                       term=None, problem=None, **kwargs):
-                                    
-    """
-    Shrinkage-modified diffusion coefficient
-    D_eff = D_l * (1 - α_shrink * w)
-    """
-    if mode != 'qp' or coors is None:
-        return {}
-    
-    try:
-        if problem is not None and hasattr(problem, 'get_variables'):
-            variables = problem.get_variables()
-            
-            if 'Cl' in variables:
-                Cl_var = variables['Cl']
-                Cl_vals = Cl_var.get_state_in_region(problem.domain.regions['Omega'])
-                
-                # Calculate effective diffusivity considering shrinkage
-                # Higher moisture -> more shrinkage -> reduced diffusivity
-                shrinkage_factor = nm.maximum(0.1, 1.0 - alpha_shrink * Cl_vals)
-                D_eff = D_l * shrinkage_factor
-                
-                if len(D_eff) != coors.shape[0]:
-                    D_eff = nm.full(coors.shape[0], D_eff.mean())
-            else:
-                D_eff = nm.full(coors.shape[0], D_l)
-        else:
-            D_eff = nm.full(coors.shape[0], D_l)
-            
-    except Exception as e:
-        D_eff = nm.full(coors.shape[0], D_l)
-    
-    val = D_eff.reshape((coors.shape[0], 1, 1))
+    val = coupling_effect.reshape((coupling_effect.shape[0], 1, 1))
     return {'val': val}
 
 def get_shrink_mod_diff(ts, coors, mode=None, equations=None,
                        term=None, problem=None, **kwargs):
+    """
+    Shrinkage-modified diffusion coefficient
+    D_eff = D_l * (1 - α_shrink * w)
+    """
+        
     if mode != 'qp' or coors is None:
         return {}
     
     # Get nodal values
     variables = problem.get_variables()
     Cl_var = variables['Cl']
-    Cl_nodal = Cl_var()  # 21 values at nodes
-    
-    # INTERPOLATE to quadrature points
-    # For 1D linear elements with 1 quadrature point per element:
-    # The quadrature point is at the center, so average the two nodes
-    Cl_qp = 0.5 * (Cl_nodal[:-1] + Cl_nodal[1:])  # Now 20 values!
-    print("Cl_qp shape", Cl_qp.shape)
-    
-    shrinkage_factor = nm.maximum(0.1, 1.0 - alpha_shrink * Cl_qp)
-    D_eff = D_l * shrinkage_factor  # Now 20 values - CORRECT!
-    print("D_eff shape", D_eff.shape)
+    Cl_vals = Cl_var.get_state_in_region(problem.domain.regions['Omega'])
 
-    # NOW the shapes match: 20 quadrature points = 20 material values
-    val = D_eff.reshape((coors.shape[0], 1, 1))  # (20, 1, 1)
+    # Calculate effective diffusivity considering shrinkage
+    # Higher moisture -> more shrinkage -> reduced diffusivity
+    shrinkage_factor = nm.maximum(0.1, 1.0 - alpha_shrink * Cl_vals)
+    D_eff = D_l * shrinkage_factor
+
+    #if len(D_eff) != coors.shape[0]:
+    #    D_eff = nm.full(coors.shape[0], D_eff.mean())
+
+    # Using NODE values not elements
+    val = D_eff.reshape((D_eff.shape[0], 1, 1))  # (21, 1, 1)
     return {'val': val}
 
 # Keep all existing functions (read_input_data, get_h_o, etc.) from original code
@@ -759,15 +513,16 @@ def get_evaporation_rate(ts, coors, mode=None, equations=None, term=None,
     T_vals = T_var.get_state_in_region(problem.domain.regions['Omega'])
     Cl_vals = Cl_var.get_state_in_region(problem.domain.regions['Omega'])
     Cv_vals = Cv_var.get_state_in_region(problem.domain.regions['Omega'])
+    print("T_vals in evap rate", T_vals)
     
     # Temperature factor: linear increase from T_ref to T_evap_max
     # Essentially, when T < 0, no evaporation can occur.
     T_factor = nm.maximum(0, nm.minimum(1, (T_vals - T_ref)/(T_evap_max - T_ref)))
-    print("T_factor", T_factor) # zeros
+    #print("T_factor", T_factor)
 
     # Liquid availability factor
     Cl_factor = nm.maximum(0, (Cl_vals - Cl_min)/Cl_min)
-    print("Cl factor", Cl_factor)
+    #print("Cl factor", Cl_factor)
     
     # Vapor saturation factor (reduces evaporation when vapor content is high)
     T_K = T_vals + 273.15
@@ -775,10 +530,10 @@ def get_evaporation_rate(ts, coors, mode=None, equations=None, term=None,
     M_wv = 0.018     # kg/mol, molar mass of water vapor
     R_gas = 8.314    # J/(mol*K)
     rho_v_sat = Psat * M_wv / (R_gas * T_K)  # kg/m³
-    print("rho_v_sat", rho_v_sat)
+    #print("rho_v_sat", rho_v_sat)
 
     vapor_factor = nm.maximum(0, 1.0 - Cv_vals / rho_v_sat)
-    print("vapor factor", vapor_factor)
+    #print("vapor factor", vapor_factor)
     
     # Combined evaporation rate
     evap_rate = k_evap * humidity_factor * T_factor * Cl_factor * vapor_factor
@@ -786,73 +541,12 @@ def get_evaporation_rate(ts, coors, mode=None, equations=None, term=None,
     print("\nEvaporation rate", evap_rate, evap_rate.shape)
 
     # Ensure we have the right shape for quadrature points
-    if len(evap_rate) != coors.shape[0]:
-        print(f"WARNING: Dimension mismatch! Nodes: {len(evap_rate)}, QP: {coors.shape[0]}")
-        print("Using average evaporation rate as fallback")
-        evap_rate = nm.full(coors.shape[0], evap_rate.mean())
+    #if len(evap_rate) != coors.shape[0]:
+    #    print(f"WARNING: Dimension mismatch! Nodes: {len(evap_rate)}, QP: {coors.shape[0]}")
+    #    print("Using average evaporation rate as fallback")
+    #    evap_rate = nm.full(coors.shape[0], evap_rate.mean())
     
-    val = evap_rate.reshape((coors.shape[0], 1, 1))
-    return {'val': val}
-
-def get_evap_rate(ts, coors, mode=None, equations=None, term=None, 
-                        problem=None, **kwargs):
-    """
-    Enhanced temperature and liquid-content dependent evaporation rate.
-    Includes humidity effects using SfePy API.
-    
-    Evaporation model:
-    m_evap = k_evap * f_humidity * f_temperature * f_liquid * f_vapor
-    
-    where:
-    - f_humidity = (1 - RH/100) accounts for ambient humidity
-    - f_temperature = max(0, (T - T_ref)/(T_evap_max - T_ref)) 
-    - f_liquid = max(0, (Cl - Cl_min)/Cl_min) accounts for available liquid
-    - f_vapor = 1 - Cv/rho_v_sat limits evaporation near saturation
-    """
-    if mode != 'qp' or coors is None:
-        return {}
-    
-    # Get current relative humidity from environmental data
-    hour_idx = min(int(ts.time / 3600), len(rh) - 1)
-    current_rh = rh[hour_idx]
-    humidity_factor = max(0, 1.0 - current_rh/100.0)
-    
-    # Get current state variables
-    variables = problem.get_variables()
-    T_var = variables['T']
-    Cl_var = variables['Cl']
-    Cv_var = variables['Cv']
-    
-    # Get state vectors
-    T_vals = T_var.get_state_in_region(problem.domain.regions['Omega'])   # 21 points
-    Cl_vals = Cl_var.get_state_in_region(problem.domain.regions['Omega']) # 21 points
-    Cv_vals = Cv_var.get_state_in_region(problem.domain.regions['Omega']) # 21 points
-    
-    # INTERPOLATE to quadrature points (average of adjacent nodes)
-    T_qp = 0.5 * (T_vals[:-1] + T_vals[1:])  # 20 values
-    Cl_qp = 0.5 * (Cl_vals[:-1] + Cl_vals[1:])  # 20 values  
-    Cv_qp = 0.5 * (Cv_vals[:-1] + Cv_vals[1:])  # 20 values
-    
-    # Now do calculations with 20 QUADRATURE point values
-    T_factor = nm.maximum(0, nm.minimum(1, (T_qp - T_ref)/(T_evap_max - T_ref)))
-    Cl_factor = nm.maximum(0, (Cl_qp - Cl_min)/Cl_min)
-    
-    T_K = T_qp + 273.15
-    Psat = Psat_WV(T_K) * 100.0
-    rho_v_sat = Psat * 0.018 / (8.314 * T_K)
-    vapor_factor = nm.maximum(0, 1.0 - Cv_qp / rho_v_sat)
-    
-    evap_rate = k_evap * humidity_factor * T_factor * Cl_factor * vapor_factor  # 20 values
-    
-    print("\nEvaporation rate", evap_rate, evap_rate.shape)
-
-    # Ensure we have the right shape for quadrature points
-    if len(evap_rate) != coors.shape[0]:
-        print(f"WARNING: Dimension mismatch! Nodes: {len(evap_rate)}, QP: {coors.shape[0]}")
-        print("Using average evaporation rate as fallback")
-        evap_rate = nm.full(coors.shape[0], evap_rate.mean())
-    
-    val = evap_rate.reshape((coors.shape[0], 1, 1))
+    val = evap_rate.reshape((evap_rate.shape[0], 1, 1))
     return {'val': val}
 
 def calculate_enhanced_evaporation(Cl_vals, Cv_vals, T_vals, rh_current):
@@ -1228,7 +922,7 @@ functions = {
     # NEW FUNCTIONS
     'get_pressure_gradient_source': (get_pressure_gradient_source,),
     'get_soret_effect': (get_soret_effect,),
-    'get_heat_moisture_coupling': (get_heat_moisture_coupling,),
+    'get_heat_moisture_coupling': (get_heat_moist_coup,),
     'get_shrinkage_modified_diffusivity': (get_shrink_mod_diff,),
 }
 
@@ -1317,7 +1011,6 @@ solvers = {
 
 def save_enhanced_results(out, problem, state, extend=False):
     """Enhanced results saving with additional physics terms."""
-    import os
     
     filename = os.path.join(problem.conf.options['output_dir'], "enhanced_moisture_results_v6.csv")
     header = [
