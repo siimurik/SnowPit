@@ -59,7 +59,7 @@ For running in parallel, install:
     pip install mpi4py
 
 Run on mulptiple cores with:
-    mpirun -n 4 sfepy-run --app=bvp-mM --debug-mpi fem_snow_liquid_v6.py
+    mpirun -n 3 sfepy-run --app=bvp-mM --debug-mpi fem_snow_liquid_v6.py
 ==================================================================
 """
 
