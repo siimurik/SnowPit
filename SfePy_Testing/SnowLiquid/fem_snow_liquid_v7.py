@@ -9,9 +9,9 @@ GOVERNING EQUATIONS:
 Heat Equation (Temperature T), Liquid Equation (Liquid Content Cl),
 Vapor Equation (Vapor Content Cv).
 
-    Heat:   ρcp ∂T/∂t = λ ∂²T/∂x² + k_c ∂Cl/∂x
-    Liquid: ∂Cl/∂t = D_eff(Cl) ∂²Cl/∂x² + D_p ∂²p/∂x² + D_t ∂²T/∂x² - m_evap
-    Vapor:  ∂Cv/∂t = D_v ∂²Cv/∂x² + m_evap
+    Heat:   ρcp ∂T/∂t = λ ∇²T + k_c ∇²Cl + ΔH ε_L ∂Cl/∂t
+    Liquid: ∂Cl/∂t = D_eff(Cl) ∇²Cl + D_t ∇²T + ∇·(D_p ∇p) - m_evap
+    Vapor:  ∂Cv/∂t = D_v ∇²Cv + m_evap
 ------------------------------------------------------------------
 ENHANCED COUPLING MECHANISMS:
 1. Pressure-driven liquid flow: 
@@ -53,13 +53,7 @@ MATERIAL PROPERTIES:
 CODE EXECUTION INSTRUCTIONS:
 
 Run this script with:
-    sfepy-run fem_snow_liquid_v6.py
-
-For running in parallel, install:
-    pip install mpi4py
-
-Run on mulptiple cores with:
-    mpirun -n 3 sfepy-run --app=bvp-mM --debug-mpi fem_snow_liquid_v6.py
+    sfepy-run fem_snow_liquid_v7.py
 ==================================================================
 """
 
@@ -84,22 +78,25 @@ moist_cont = 50.0 # %
 rho_wet = rho_dry + moist_cont*10.0 # kg/m^3
 D = lam_i/(c_wet * rho_wet) # m^2/s
 
-# Enhanced transport coefficients
-D_l = 1e-8        # Liquid diffusion coefficient [m^2/s]
-D_v = 2e-5        # Vapor diffusion coefficient [m^2/s]
-D_p = 1e-9        # Pressure diffusion coefficient [m^2/(Pa*s)]
-D_t = 5e-10       # Thermal diffusion coefficient [m^2/(K*s)] - Soret effect
-k_c = 0.1         # Heat-moisture coupling coefficient [W*s/(m*K*kg)]
-
 # Pressure and suction parameters
-k_s = 1e-15       # Permeability [m^2]
+k_s = 1e-10       # Permeability [m^2]
+phi = 0.4         # Snow porosity
 mu_water = 1e-3   # Dynamic viscosity of water [Pa*s]
 p_atm = 101325    # Atmospheric pressure [Pa]
-gamma_surface = 0.072  # Surface tension [N/m]
-contact_angle = 60     # Contact angle [degrees]
+gamma_surface = 0.075  # Surface tension [N/m]
+contact_angle = 5      # Contact angle [degrees]
+
+# Enhanced transport coefficients
+D_l = 1e-6        # Liquid diffusion coefficient [m^2/s]
+D_v = 2e-5        # Vapor diffusion coefficient [m^2/s]
+D_p = k_s / (mu_water * phi) # Pressure diffusion coefficient [m^2/(Pa*s)]
+D_t = 1e-10       # Thermal diffusion coefficient [m^2/(K*s)] - Soret effect
+k_c = 0.1         # Heat-moisture coupling coefficient [W*s/(m*K*kg)]
+k_p = 1e-9        # Pressure-heat-moisture coefficient
 
 # Additional physical constants
 L_v = 2.45e6      # Latent heat of vaporization [J/kg]
+L_s = 2.83e6     # Latent heat of sublimation [J/kg]
 R_v = 461.5       # Specific gas constant for water vapor [J/(kg*K)]
 alpha_shrink = 0.01   # Shrinkage coefficient [1/kg_water]
 
@@ -126,39 +123,99 @@ def Psat_WV(T_K):
     return x
 
 def calculate_capillary_pressure(Cl, T):
-    """
-    Calculate capillary pressure based on moisture content and temperature
-    Based on Young-Laplace equation and pore structure
-    """
-    # Simplified model: p_cap = f(moisture_content, temperature)
-    # Higher moisture -> lower capillary pressure (larger effective pore radius)
-    Cl_norm = nm.maximum(0.001, Cl / 0.1)  # Normalize to prevent division by zero
-    
-    # Temperature effect on surface tension
-    T_celsius = T
-    sigma_temp = gamma_surface * (1 - 0.0015 * T_celsius)  # Approximate temperature dependence
-    
-    # Effective capillary radius (increases with moisture content)
-    r_eff = 1e-6 * (Cl_norm ** 0.3)  # Effective radius [m]
-    
-    # Young-Laplace equation: ΔP = 2σcos(θ)/r
-    cos_theta = nm.cos(nm.radians(contact_angle))
-    p_cap = 2 * sigma_temp * cos_theta / r_eff
-    
-    return p_cap
+    sigma = gamma_surface * (1 - Cl_min*T)         # ~0.075 N/m near 0°C
+    cos_theta = nm.cos(nm.radians(contact_angle))     # water on ice ~ complete wetting → ~0°
+    # Map Cl (kg/m³) to a radius band ~[1e-4, 5e-4] m for snow
+    Cl_ref = 30.0                           # scale (tune if needed)
+    r_min, r_max = 1e-4, 5e-4
+    f = 1.0 / (1.0 + (Cl / Cl_ref))         # more liquid → slightly smaller suction
+    r_eff = r_min + (r_max - r_min) * f
+    return 2.0 * sigma * cos_theta / r_eff
 
 def calculate_osmotic_pressure(Cl, T):
     """
-    Calculate osmotic pressure based on moisture content
-    Simplified model for clay-water interaction
+    Calculate osmotic pressure using Van't Hoff law.
+    
+    Parameters
+    ----------
+    Cl : array or float
+        Liquid water content [kg/m³].
+        Here interpreted as solute mass concentration proxy.
+    T : array or float
+        Temperature [°C].
+    
+    Returns
+    -------
+    pi_osmotic : array or float
+        Osmotic pressure [Pa].
     """
-    # Van't Hoff equation approximation for dilute solutions
-    # π = cRT where c is concentration
     T_K = T + 273.15
-    concentration = Cl / 1000.0  # Approximate concentration [mol/L]
-    pi_osmotic = concentration * R_v * T_K * 0.001  # Convert to Pa
+    
+    # Assume Cl is "solute equivalent mass" in kg/m³.
+    # Convert to mol/m³ using molar mass of water.
+    M_water = 0.018015  # kg/mol
+    concentration = Cl / M_water  # mol/m³
+    
+    # Van’t Hoff equation
+    R = 8.314  # J/(mol·K)
+    pi_osmotic = concentration * R * T_K  # Pa
     
     return pi_osmotic
+
+def get_pressure_gradient_source_new(ts, coors, mode=None, equations=None, term=None,
+                                problem=None, **kwargs):
+    """
+    Compute pressure-gradient source term for the liquid equation:
+        ∇·(D_p ∇p) with p = p_capillary + p_osmotic
+
+    Returns a nodal source term [kg/(m³·s)].
+    """
+    if mode != 'qp' or coors is None:
+        return {}
+    
+    try:
+        variables = problem.get_variables()
+        T_var = variables['T']
+        Cl_var = variables['Cl']
+
+        # State vectors
+        T_vals = T_var.get_state_in_region(problem.domain.regions['Omega']).flatten()
+        Cl_vals = Cl_var.get_state_in_region(problem.domain.regions['Omega']).flatten()
+
+        n_nodes = len(Cl_vals)
+        pressure_source = nm.zeros_like(Cl_vals)
+
+        # Compute pressures
+        p_cap = calculate_capillary_pressure(Cl_vals, T_vals)
+        p_osm = calculate_osmotic_pressure(Cl_vals, T_vals)
+        p_total = p_cap + p_osm
+
+        # Compute pressure-driven flux divergence (Darcy’s law form)
+        for i in range(n_nodes):
+            if i == 0 and n_nodes > 1:
+                dp_dx = (p_total[1] - p_total[0]) / dx
+                D_avg = 0.5 * (D_p + D_p)  # constant here
+                flux_right = -D_avg * dp_dx
+                pressure_source[i] = -flux_right / dx
+            elif i == n_nodes - 1:
+                dp_dx = (p_total[i] - p_total[i-1]) / dx
+                D_avg = 0.5 * (D_p + D_p)
+                flux_left = -D_avg * dp_dx
+                pressure_source[i] = flux_left / dx
+            else:
+                dp_dx_left = (p_total[i] - p_total[i-1]) / dx
+                dp_dx_right = (p_total[i+1] - p_total[i]) / dx
+                flux_left = -D_p * dp_dx_left
+                flux_right = -D_p * dp_dx_right
+                pressure_source[i] = (flux_right - flux_left) / dx
+
+        # Reshape for SfePy quadrature points
+        val = pressure_source.reshape((pressure_source.shape[0], 1, 1))
+        return {'val': val}
+
+    except Exception as e:
+        print(f"Pressure gradient source error: {e}")
+        return {'val': nm.zeros((coors.shape[0], 1, 1))}
 
 def get_pressure_gradient_source(ts, coors, mode=None, equations=None, term=None,
                                 problem=None, **kwargs):
@@ -185,7 +242,8 @@ def get_pressure_gradient_source(ts, coors, mode=None, equations=None, term=None
                 p_osm = calculate_osmotic_pressure(Cl_vals, T_vals)
                 total_pressure = p_cap + p_osm - p_atm
                 
-                # Pressure gradient effect (simplified as pressure magnitude for volume term)
+                # Pressure gradient effect (simplified as pressure magnitude 
+                # for volume term)
                 pressure_effect = D_p * total_pressure / (mu_water * dx**2)
                 
                 print("Pressure effect", pressure_effect, pressure_effect.shape)
@@ -216,20 +274,19 @@ def get_soret_effect(ts, coors, mode=None, equations=None, term=None,
     variables = problem.get_variables()
     T_var = variables['T']
     T_vals = T_var.get_state_in_region(problem.domain.regions['Omega'])
-    print("T_vals shape", T_vals.shape)
+    #print("T_vals shape", T_vals.shape)
     
     # Flatten the 2D array to 1D for gradient calculation
     T_vals_flat = T_vals.flatten()
-    print(f"T_vals shape: {T_vals.shape}, flattened: {T_vals_flat.shape}")
+    #print(f"T_vals shape: {T_vals.shape}, flattened: {T_vals_flat.shape}")
 
     # Use the global dx parameter directly
-    print(f"Calculating gradient with {len(T_vals_flat)} points, dx={dx}")
+    #print(f"Calculating gradient with {len(T_vals_flat)} points, dx={dx}")
     T_grad = nm.gradient(T_vals_flat) / dx
     soret_effect = D_t * T_grad
     
     val = soret_effect.reshape((soret_effect.shape[0], 1, 1))
     return {'val': val}
-
 
 def get_heat_moist_coup(ts, coors, mode=None, equations=None, term=None,
                              problem=None, **kwargs):
@@ -280,7 +337,6 @@ def get_shrink_mod_diff(ts, coors, mode=None, equations=None,
     val = D_eff.reshape((D_eff.shape[0], 1, 1))  # (21, 1, 1)
     return {'val': val}
 
-# Keep all existing functions (read_input_data, get_h_o, etc.) from original code
 def read_input_data(filename="DATA.csv"):
     """Read air temperature, air velocity, precipitation, global solar irradation 
     and relative humidity data from CSV file."""
@@ -296,7 +352,6 @@ def read_input_data(filename="DATA.csv"):
             relHum.append(float(row[4].strip())) 
     return airTemp, airVel, prec, gloSolIr, relHum
 
-# Keep existing boundary condition functions (get_h_o, get_t_o, etc.)
 def get_h_o(ts, coors, mode=None, **kwargs):
     """Time-dependent heat transfer coefficient."""
     if mode != 'qp' or coors is None: return {}
@@ -318,7 +373,6 @@ def get_t_o(ts, coors, mode=None, **kwargs):
     val = nm.full((coors.shape[0], 1, 1), t_o[hour_idx], dtype=nm.float64)
     return {'val': val}
 
-# Keep other existing functions...
 def get_cl_o(ts, coors, mode=None, **kwargs):
     """Time-dependent outer liquid reference content."""
     if mode != 'qp' or coors is None: return {}
@@ -479,71 +533,34 @@ def calculate_vapor_bc_coefficient(T_celsius, RH_percent):
     return h_v_eff
 
 def get_evaporation_rate(ts, coors, mode=None, equations=None, term=None, 
-                        problem=None, **kwargs):
-    """
-    Enhanced temperature and liquid-content dependent evaporation rate.
-    Includes humidity effects using SfePy API.
-    
-    Evaporation model:
-    m_evap = k_evap * f_humidity * f_temperature * f_liquid * f_vapor
-    
-    where:
-    - f_humidity = (1 - RH/100) accounts for ambient humidity
-    - f_temperature = max(0, (T - T_ref)/(T_evap_max - T_ref)) 
-    - f_liquid = max(0, (Cl - Cl_min)/Cl_min) accounts for available liquid
-    - f_vapor = 1 - Cv/rho_v_sat limits evaporation near saturation
-    """
+                         problem=None, **kwargs):
+    """Stabilized evaporation rate."""
     if mode != 'qp' or coors is None:
         return {}
-    
-    # Get current relative humidity from environmental data
+
     hour_idx = min(int(ts.time / 3600), len(rh) - 1)
     current_rh = rh[hour_idx]
-    humidity_factor = max(0, 1.0 - current_rh/100.0)
-    print("humidity_factor", humidity_factor)
     
-    # Get current state variables
     variables = problem.get_variables()
-    T_var = variables['T']
-    Cl_var = variables['Cl']
-    Cv_var = variables['Cv']
-    
-    # Get state vectors
-    T_vals = T_var.get_state_in_region(problem.domain.regions['Omega'])
-    Cl_vals = Cl_var.get_state_in_region(problem.domain.regions['Omega'])
-    Cv_vals = Cv_var.get_state_in_region(problem.domain.regions['Omega'])
-    print("T_vals in evap rate", T_vals)
-    
-    # Temperature factor: linear increase from T_ref to T_evap_max
-    # Essentially, when T < 0, no evaporation can occur.
-    T_factor = nm.maximum(0, nm.minimum(1, (T_vals - T_ref)/(T_evap_max - T_ref)))
-    #print("T_factor", T_factor)
+    T_vals = variables['T'].get_state_in_region(problem.domain.regions['Omega']).flatten()
+    Cl_vals = variables['Cl'].get_state_in_region(problem.domain.regions['Omega']).flatten()
+    Cv_vals = variables['Cv'].get_state_in_region(problem.domain.regions['Omega']).flatten()
 
-    # Liquid availability factor
-    Cl_factor = nm.maximum(0, (Cl_vals - Cl_min)/Cl_min)
-    #print("Cl factor", Cl_factor)
+    # Smooth, bounded factors to prevent stiffness
+    humidity_factor = nm.tanh(2 * (1.0 - current_rh / 100.0))  # Smooth transition
+    T_factor = 0.5 * (1 + nm.tanh((T_vals - T_ref) / 5.0))     # Smooth temperature effect
+    Cl_factor = nm.tanh(5 * nm.maximum(0.0, Cl_vals - Cl_min)) # Smooth liquid availability
     
-    # Vapor saturation factor (reduces evaporation when vapor content is high)
+    # Prevent division by zero in vapor factor
     T_K = T_vals + 273.15
-    Psat = Psat_WV(T_K) * 100.0  # hPa to Pa
-    M_wv = 0.018     # kg/mol, molar mass of water vapor
-    R_gas = 8.314    # J/(mol*K)
-    rho_v_sat = Psat * M_wv / (R_gas * T_K)  # kg/m³
-    #print("rho_v_sat", rho_v_sat)
+    Psat = nm.maximum(100.0, Psat_WV(T_K) * 100.0)  # Minimum pressure
+    M_wv = 0.018
+    R_gas = 8.314
+    rho_v_sat = Psat * M_wv / (R_gas * T_K)
+    vapor_factor = nm.tanh(2 * nm.maximum(0.0, 1.0 - Cv_vals / rho_v_sat))
 
-    vapor_factor = nm.maximum(0, 1.0 - Cv_vals / rho_v_sat)
-    #print("vapor factor", vapor_factor)
-    
-    # Combined evaporation rate
-    evap_rate = k_evap * humidity_factor * T_factor * Cl_factor * vapor_factor
-    
-    print("\nEvaporation rate", evap_rate, evap_rate.shape)
-
-    # Ensure we have the right shape for quadrature points
-    #if len(evap_rate) != coors.shape[0]:
-    #    print(f"WARNING: Dimension mismatch! Nodes: {len(evap_rate)}, QP: {coors.shape[0]}")
-    #    print("Using average evaporation rate as fallback")
-    #    evap_rate = nm.full(coors.shape[0], evap_rate.mean())
+    # Scale evaporation rate to prevent stiffness
+    evap_rate = k_evap * 0.1 * humidity_factor * T_factor * Cl_factor * vapor_factor
     
     val = evap_rate.reshape((evap_rate.shape[0], 1, 1))
     return {'val': val}
@@ -610,7 +627,7 @@ def mesh_hook(mesh, mode):
     """Generate the 1D mesh."""
     if mode == 'read':
         coors = nm.linspace(0.0, d_ins, nodes).reshape((nodes, 1))
-        print("OG coors shape", coors.shape)
+        #print("OG coors shape", coors.shape)
         conn = nm.arange(nodes, dtype=nm.int32).repeat(2)[1:-1].reshape((-1, 2))
         mat_ids = nm.zeros(nodes - 1, dtype=nm.int32)
         descs = ['1_2']
@@ -849,6 +866,233 @@ def calculate_dufour_effect(Cl_vals, T_vals, dx):
     
     return dufour_source
 
+def get_L_v_eps_L(ts, coors, mode=None, equations=None, term=None,
+                 problem=None, **kwargs):
+    """Calculate L_v * ε_L = L_v * (Cl / ρ_water)"""
+    if mode != 'qp' or coors is None:
+        return {}
+    
+    variables = problem.get_variables()
+    Cl_var = variables['Cl']
+    Cl_vals = Cl_var.get_state_in_region(problem.domain.regions['Omega'])
+    Cl_vals_flat = Cl_vals.flatten()
+    
+    # temperature-dependent latent heat
+    L = nm.where((variables['T'].get_state_in_region(problem.domain.regions['Omega']).flatten()) < 0.0,
+                    L_s, L_v)
+    eps_L = Cl_vals_flat / 1000.0
+    val = (L * eps_L).reshape((-1,1,1))
+    return {'val': val}
+
+# Enhanced Robin BC functions for realistic precipitation effects
+
+def get_prec_enhanced_cl_ref(ts, coors, mode=None, **kwargs):
+    """
+    Precipitation-enhanced reference liquid concentration for Robin BC.
+    
+    Physical basis:
+    - During rain: Surface becomes saturated → higher Cl_ref
+    - During snow: Accumulated snow provides moisture source → moderate Cl_ref increase
+    - No precipitation: Lower Cl_ref based on humidity
+    
+    Robin BC: -D_eff ∂Cl/∂x = h_l (Cl - Cl_ref)
+    Higher Cl_ref → drives more moisture into the material
+    """
+    if mode != 'qp' or coors is None:
+        return {}
+    
+    hour_idx = min(int(ts.time / 3600), len(prec) - 1)
+    current_prec = prec[hour_idx] if hour_idx < len(prec) else 0.0  # mm/h
+    current_temp = t_o[hour_idx] if hour_idx < len(t_o) else -5.0   # °C
+    current_rh = rh[hour_idx] if hour_idx < len(rh) else 70.0       # %
+    
+    # Base reference concentration (from humidity)
+    base_cl_ref = 0.02 * (current_rh / 100.0)  # kg/m³
+    
+    # Precipitation enhancement
+    if current_prec > 0.1:  # Significant precipitation (> 0.1 mm/h)
+        
+        if current_temp >= 2.0:
+            # Rain: Surface saturation effect
+            # Realistic values: wet surface can have 50-200 kg/m³ moisture content
+            rain_intensity_factor = min(2.0, current_prec / 5.0)  # Normalize by 5 mm/h
+            prec_cl_ref = 0.15 * rain_intensity_factor  # kg/m³
+            
+        elif current_temp <= -2.0:
+            # Snow: Gradual moisture source as it melts/sublimates
+            # Snow provides less immediate surface moisture than rain
+            snow_intensity_factor = min(1.5, current_prec / 3.0)
+            prec_cl_ref = 0.05 * snow_intensity_factor  # kg/m³
+            
+        else:
+            # Mixed precipitation: weighted average
+            rain_fraction = (current_temp + 2.0) / 4.0
+            rain_contribution = 0.15 * min(2.0, current_prec / 5.0) * rain_fraction
+            snow_contribution = 0.05 * min(1.5, current_prec / 3.0) * (1.0 - rain_fraction)
+            prec_cl_ref = rain_contribution + snow_contribution
+        
+        # Combined reference concentration
+        enhanced_cl_ref = max(base_cl_ref, prec_cl_ref)
+        
+        # Prevent unrealistic values
+        enhanced_cl_ref = min(enhanced_cl_ref, 0.3)  # Cap at 300 kg/m³
+        
+    else:
+        # No precipitation: just humidity-based reference
+        enhanced_cl_ref = base_cl_ref
+    
+    val = nm.full((coors.shape[0], 1, 1), enhanced_cl_ref, dtype=nm.float64)
+    return {'val': val}
+
+def get_prec_enhanced_h_l(ts, coors, mode=None, **kwargs):
+    """
+    Precipitation-enhanced mass transfer coefficient for Robin BC.
+    
+    Physical basis:
+    - Rain: Surface water film increases mass transfer dramatically
+    - Snow: Surface ice/snow layer creates additional resistance initially,
+            but provides sustained moisture source
+    - Wind + precipitation: Enhanced convective mass transfer
+    
+    Higher h_l → stronger boundary condition effect
+    """
+    if mode != 'qp' or coors is None:
+        return {}
+    
+    hour_idx = min(int(ts.time / 3600), len(prec) - 1)
+    current_prec = prec[hour_idx] if hour_idx < len(prec) else 0.0
+    current_temp = t_o[hour_idx] if hour_idx < len(t_o) else -5.0
+    current_vel = airVel[hour_idx] if hour_idx < len(airVel) else 2.0  # m/s
+    current_rh = rh[hour_idx] if hour_idx < len(rh) else 70.0
+    
+    # Base mass transfer coefficient (from your current value)
+    base_h_l = 2e-6  # m/s
+    
+    # Temperature effect on molecular diffusion
+    temp_factor = nm.exp(0.03 * current_temp)  # Arrhenius-type, stronger than before
+    
+    # Wind effect (convective mass transfer)
+    wind_factor = 1.0 + 0.5 * current_vel  # Linear with wind speed
+    
+    # Humidity effect
+    humidity_factor = 1.0 + 0.3 * (current_rh / 100.0)
+    
+    # Precipitation-specific effects
+    if current_prec > 0.1:
+        
+        if current_temp >= 2.0:
+            # Rain: Surface water film dramatically increases mass transfer
+            # Physical basis: eliminates gas-phase boundary layer resistance
+            rain_enhancement = 2.0 + 3.0 * min(1.0, current_prec / 10.0)
+            
+        elif current_temp <= -2.0:
+            # Snow: Initial resistance, then sustained transfer
+            # Fresh snow creates some resistance, but sustained moisture supply
+            snow_enhancement = 0.7 + 1.5 * min(1.0, current_prec / 5.0)
+            
+        else:
+            # Mixed precipitation: weighted average
+            rain_fraction = (current_temp + 2.0) / 4.0
+            rain_enh = 2.0 + 3.0 * min(1.0, current_prec / 10.0)
+            snow_enh = 0.7 + 1.5 * min(1.0, current_prec / 5.0)
+            rain_enhancement = rain_fraction * rain_enh + (1.0 - rain_fraction) * snow_enh
+            
+        prec_factor = rain_enhancement
+        
+    else:
+        prec_factor = 1.0
+    
+    # Combined enhanced mass transfer coefficient
+    enhanced_h_l = base_h_l * temp_factor * wind_factor * humidity_factor * prec_factor
+    
+    # Reasonable bounds to prevent numerical issues
+    enhanced_h_l = max(enhanced_h_l, 1e-8)  # Minimum
+    enhanced_h_l = min(enhanced_h_l, 1e-3)  # Maximum (very high but not unrealistic)
+    
+    val = nm.full((coors.shape[0], 1, 1), enhanced_h_l, dtype=nm.float64)
+    return {'val': val}
+
+def get_accumulated_snow_source(ts, coors, mode=None, equations=None, 
+                               term=None, problem=None, **kwargs):
+    """
+    Volume source term representing snow accumulation and melting.
+    
+    This handles the realistic physics of:
+    1. Snow accumulation as solid precipitation 
+    2. Gradual melting when temperature rises
+    3. Sublimation (direct solid → vapor transition)
+    
+    Applied as volume source in the liquid equation.
+    """
+    if mode != 'qp' or coors is None:
+        return {}
+    
+    hour_idx = min(int(ts.time / 3600), len(prec) - 1)
+    current_prec = prec[hour_idx] if hour_idx < len(prec) else 0.0
+    current_temp = t_o[hour_idx] if hour_idx < len(t_o) else -5.0
+    
+    # Get current state variables
+    variables = problem.get_variables()
+    T_vals = variables['T'].get_state_in_region(problem.domain.regions['Omega']).flatten()
+    Cl_vals = variables['Cl'].get_state_in_region(problem.domain.regions['Omega']).flatten()
+    
+    n_nodes = len(T_vals)
+    snow_source = nm.zeros(n_nodes)
+    
+    # Define surface penetration depth for snow accumulation
+    snow_penetration_depth = 0.02  # m, realistic for fine snow infiltration
+    n_surface_nodes = max(1, int(snow_penetration_depth / dx))
+    
+    # Snow accumulation (when precipitating and cold)
+    if current_prec > 0.1 and current_temp <= 1.0:
+        # Convert precipitation to snow water equivalent
+        snow_rate_flux = current_prec / 3600.0  # kg/(m²·s)
+        
+        # Snow density effect: fresh snow is ~100-200 kg/m³, so 1mm precip → ~0.1-0.2mm snow depth
+        # But snow can infiltrate into porous insulation material
+        snow_infiltration_rate = snow_rate_flux / snow_penetration_depth  # kg/(m³·s)
+        
+        # Apply to surface nodes with exponential decay
+        for i in range(min(n_surface_nodes, n_nodes)):
+            depth = i * dx
+            decay_factor = nm.exp(-depth / (snow_penetration_depth / 3.0))
+            snow_source[i] += snow_infiltration_rate * decay_factor * 0.1  # 10% immediate liquid
+    
+    # Snow melting (temperature-dependent throughout domain)
+    for i in range(n_nodes):
+        if T_vals[i] > 0.5:  # Melting threshold with hysteresis
+            # Estimate "snow content" as liquid above baseline
+            baseline_liquid = 0.01  # kg/m³
+            potential_snow = max(0.0, Cl_vals[i] - baseline_liquid)
+            
+            if potential_snow > 0.001:  # Minimum snow for melting
+                # Melting rate: depends on temperature excess and available snow
+                melt_rate_coeff = 2e-4  # [1/(°C·s)] - calibration parameter
+                T_excess = T_vals[i] - 0.0  # Temperature above melting point
+                
+                # Realistic melting kinetics: higher T → faster melt, but limited by available snow
+                melt_rate = melt_rate_coeff * T_excess * potential_snow
+                
+                # Prevent over-melting
+                max_melt = potential_snow / (2.0 * dt)  # Don't melt more than half per timestep
+                melt_rate = min(melt_rate, max_melt)
+                
+                snow_source[i] += melt_rate
+    
+    # Sublimation effect (snow → vapor directly)
+    # This reduces liquid source when it's cold and dry
+    for i in range(min(n_surface_nodes, n_nodes)):
+        if T_vals[i] < 0.0:
+            # Estimate snow sublimation based on humidity deficit
+            current_rh_local = rh[hour_idx] if hour_idx < len(rh) else 70.0
+            if current_rh_local < 90.0:  # Dry conditions promote sublimation
+                sublimation_rate = 1e-6 * (90.0 - current_rh_local) / 90.0  # kg/(m³·s)
+                snow_source[i] -= sublimation_rate  # Removes from liquid equation
+    
+    val = snow_source.reshape((n_nodes, 1, 1))
+    return {'val': val}
+
+
 ###############################################################################
 #                                MAIN SECTION                                 #
 ###############################################################################
@@ -891,6 +1135,8 @@ materials = {
     'cl_out_dyn': 'get_cl_o',  
     'cv_out_dyn': 'get_cv_o',  
     'cv_in_dyn': 'get_cv_i',   
+    'prec_cl_ref': 'get_prec_enhanced_cl_ref',
+    'prec_h_l': 'get_prec_enhanced_h_l',
     
     # Fixed boundary conditions
     'in_fixed': ({'h_in': h_i, 'T_in': t_i, 'h_l_in': h_l_i, 
@@ -904,9 +1150,11 @@ materials = {
     'soret_effect': 'get_soret_effect',                           
     'heat_moisture_coupling': 'get_heat_moisture_coupling',       
     'shrinkage_diffusivity': 'get_shrinkage_modified_diffusivity',
-    
+
     # Existing terms
     'evaporation_rate': 'get_evaporation_rate',
+    'latent_heat_coeff': 'get_L_v_eps_L',  # Function-based coefficient
+    'snow_accumulation': 'get_accumulated_snow_source',  
 }
 
 functions = {
@@ -923,6 +1171,10 @@ functions = {
     'get_soret_effect': (get_soret_effect,),
     'get_heat_moisture_coupling': (get_heat_moist_coup,),
     'get_shrinkage_modified_diffusivity': (get_shrink_mod_diff,),
+    'get_L_v_eps_L': (get_L_v_eps_L,),
+    'get_prec_enhanced_cl_ref': (get_prec_enhanced_cl_ref,),
+    'get_prec_enhanced_h_l': (get_prec_enhanced_h_l,),
+    'get_accumulated_snow_source': (get_accumulated_snow_source,),
 }
 
 regions = {
@@ -950,28 +1202,33 @@ integrals = {'i': 1,}
 
 # ENHANCED EQUATIONS with additional physics terms
 equations = {
-    'Heat': """dw_dot.i.Omega(mat.rho_cp, s, dT/dt)
-             + dw_laplace.i.Omega(mat.lam, s, T)
-             = - dw_bc_newton.i.Gamma_Left(h_out_dyn.val, T_out_dyn.val, s, T)
-               - dw_bc_newton.i.Gamma_Right(in_fixed.h_in, in_fixed.T_in, s, T)
-               + dw_volume_lvf.i.Omega(heat_moisture_coupling.val, s)
-             """,
+    'Heat': """
+            dw_dot.i.Omega(mat.rho_cp, s, dT/dt)
+            + dw_laplace.i.Omega(mat.lam, s, T)
+            + dw_laplace.i.Omega(coupling_mat.k_c, s, Cl)
+            + dw_dot.i.Omega(latent_heat_coeff.val, s, dCl/dt)
+            = - dw_bc_newton.i.Gamma_Left(h_out_dyn.val, T_out_dyn.val, s, T)
+              - dw_bc_newton.i.Gamma_Right(in_fixed.h_in, in_fixed.T_in, s, T)
+            """,
              
-    'Liquid': """dw_dot.i.Omega(r, dCl/dt)
-               + dw_laplace.i.Omega(shrinkage_diffusivity.val, r, Cl)
-               = - dw_volume_lvf.i.Omega(evaporation_rate.val, r)
-                 - dw_bc_newton.i.Gamma_Left(out_fixed.h_l_out, cl_out_dyn.val, r, Cl)
-                 - dw_bc_newton.i.Gamma_Right(in_fixed.h_l_in, in_fixed.Cl_in, r, Cl)
-                 + dw_volume_lvf.i.Omega(pressure_gradient.val, r)
-                 + dw_volume_lvf.i.Omega(soret_effect.val, r)
-               """,
+    'Liquid': """
+            dw_dot.i.Omega(r, dCl/dt)
+            + dw_laplace.i.Omega(liquid_mat.D_l, r, Cl)
+            + dw_laplace.i.Omega(thermal_mat.D_t, r, T)
+            = - dw_volume_lvf.i.Omega(evaporation_rate.val, r)
+              - dw_bc_newton.i.Gamma_Left(prec_h_l.val, prec_cl_ref.val, r, Cl)
+              - dw_bc_newton.i.Gamma_Right(in_fixed.h_l_in, in_fixed.Cl_in, r, Cl)
+              + dw_volume_lvf.i.Omega(pressure_gradient.val, r)
+              + dw_volume_lvf.i.Omega(snow_accumulation.val, r)
+            """,
                
-    'Vapor': """dw_dot.i.Omega(w, dCv/dt)
-              + dw_laplace.i.Omega(vapor_mat.D_v, w, Cv)
-              = + dw_volume_lvf.i.Omega(evaporation_rate.val, w)
-                - dw_bc_newton.i.Gamma_Left(h_v_out_dyn.val, cv_out_dyn.val, w, Cv)
-                - dw_bc_newton.i.Gamma_Right(in_fixed.h_v_in, in_fixed.Cv_in, w, Cv)
-              """
+    'Vapor': """
+            dw_dot.i.Omega(w, dCv/dt)
+            + dw_laplace.i.Omega(vapor_mat.D_v, w, Cv)
+            = + dw_volume_lvf.i.Omega(evaporation_rate.val, w)
+              - dw_bc_newton.i.Gamma_Left(h_v_out_dyn.val, cv_out_dyn.val, w, Cv)
+              - dw_bc_newton.i.Gamma_Right(in_fixed.h_v_in, in_fixed.Cv_in, w, Cv)
+            """
 }
 
 # Boundary conditions (empty but required)
@@ -1011,7 +1268,7 @@ solvers = {
 def save_enhanced_results(out, problem, state, extend=False):
     """Enhanced results saving with additional physics terms."""
     
-    filename = os.path.join(problem.conf.options['output_dir'], "enhanced_moisture_results_v6.csv")
+    filename = os.path.join(problem.conf.options['output_dir'], "enhanced_moisture_results_v7.csv")
     header = [
         "Time (s)", "Node Index", "Position (m)", 
         "Temperature (°C)", "Liquid Content (kg/m³)", "Vapor Content (kg/m³)",
@@ -1071,5 +1328,5 @@ options = {
     'ts': 'ts',
     'save_times': [3600*i for i in range(1, nr_of_hours + 1)],
     'post_process_hook': save_enhanced_results,
-    'output_dir': './output_snow_step6',
+    'output_dir': './output_snow_step7',
 }
