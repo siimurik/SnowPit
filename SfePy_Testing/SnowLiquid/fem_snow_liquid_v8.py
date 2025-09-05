@@ -16,8 +16,8 @@ Vapor Equation (Vapor Content Cv), Pressure Equation (Pore Pressure P).
     Pressure: ∂P/∂t = D_p_eff ∇²P + α_T ∇²T + α_L ∇²Cl + α_V ∇²Cv
 
 Physical meaning of the last term: 
- Pressure changes due to thermal expansion, liquid filling pores 
- and vapor pressure effects.
+  Pressure changes due to thermal expansion, liquid filling pores 
+  and vapor pressure effects.
 ------------------------------------------------------------------
 BOUNDARY CONDITIONS:
 
