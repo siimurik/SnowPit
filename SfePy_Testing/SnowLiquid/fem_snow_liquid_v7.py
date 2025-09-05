@@ -217,6 +217,7 @@ def get_pressure_gradient_source_new(ts, coors, mode=None, equations=None, term=
         print(f"Pressure gradient source error: {e}")
         return {'val': nm.zeros((coors.shape[0], 1, 1))}
 
+# NOTE! Find out why only this works and nothing else does.
 def get_pressure_gradient_source(ts, coors, mode=None, equations=None, term=None,
                                 problem=None, **kwargs):
     """
