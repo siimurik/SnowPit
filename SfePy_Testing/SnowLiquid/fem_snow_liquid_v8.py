@@ -4,18 +4,33 @@ Enhanced Heat-Liquid-Vapor-Pressure Coupled Transport System with
 Additional Moisture Movement Terms for Snow
 ------------------------------------------------------------------
 Four-field coupled system with enhanced physics including 
-realistic pressure
+realistic pressure and snow accumulation/melting processes
 ------------------------------------------------------------------
 GOVERNING EQUATIONS:
 Heat Equation (Temperature T), Liquid Equation (Liquid Content Cl),
 Vapor Equation (Vapor Content Cv), Pressure Equation (Pore Pressure P).
 
     Heat:     ρcp ∂T/∂t = λ ∇²T + k_c ∇²Cl + ΔH εᴸ ∂Cl/∂t + k_p ∇²P
-    Liquid:   ∂Cl/∂t = D_eff(Cl) ∇²Cl + D_t ∇²T + D_p ∇²P - m_evap
-    Vapor:    ∂Cv/∂t = D_v ∇²Cv + D_t_v ∇²T + D_p_v ∇²P + m_evap
+    Liquid:   ∂Cl/∂t = D_eff(Cl) ∇²Cl + D_t ∇²T + D_p ∇²P - m_evap + S_snow
+    Vapor:    ∂Cv/∂t = D_v ∇²Cv + D_t_v ∇²T + D_p_v ∇²P + m_evap + S_subl
     Pressure: ∂P/∂t = D_p_eff ∇²P + α_T ∇²T + α_L ∇²Cl + α_V ∇²Cv
 
-Physical meaning of the last term: 
+Physical meaning of the snow accumulation terms:
+  S_snow = Snow accumulation, melting and sublimation source term [kg/(m³·s)]
+  - Snow accumulation: S_snow > 0 when T_air ≤ 1°C and precipitation > 0.1 mm/h
+  - Snow melting: S_snow > 0 when T > 0.5°C and available snow content exists  
+  - Sublimation: S_snow < 0 when T < 0°C and relative humidity < 90%
+  
+  S_subl = Sublimation contribution to vapor phase [kg/(m³·s)]
+  - Direct solid-to-vapor transition in surface nodes
+  - Depends on: T < 0°C, RH < 90%, surface exposure
+
+Snow accumulation inputs:
+  - Environmental: T_air(t), precipitation(t), relative_humidity(t)
+  - Local state: T(x,t), Cl(x,t), spatial position x
+  - Physical parameters: penetration depth, melt coefficients, sublimation rates
+
+Physical meaning of the pressure term: 
   Pressure changes due to thermal expansion, liquid filling pores 
   and vapor pressure effects.
 ------------------------------------------------------------------
@@ -72,7 +87,7 @@ D_t = 1e-10       # Thermal diffusion coefficient [m^2/(K*s)] - Soret effect
 k_c = 0.1         # Heat-moisture coupling coefficient [W*s/(m*K*kg)]
 k_p = 1e-9        # Pressure-heat-moisture coefficient
 
-# NEW: Pressure field coefficients
+# Pressure field coefficients
 D_p_eff = 1e-8    # Effective pressure diffusion [m^2/s]
 alpha_T = 1e3     # Thermal expansion coefficient for pressure [Pa/K]
 alpha_L = 5e4     # Liquid-pressure coupling [Pa*m^3/kg]
