@@ -314,15 +314,14 @@ def get_prec_enhanced_h_l(ts, coors, mode=None, **kwargs):
     
     if current_prec > 0.1:
         if current_temp >= 2.0:
-            rain_enhancement = 2.0 + 3.0 * min(1.0, current_prec / 10.0)
-        #elif current_temp <= -2.0:                                         # ?
-        #    snow_enhancement = 0.7 + 1.5 * min(1.0, current_prec / 5.0)    # ?
+            prec_factor = 2.0 + 3.0 * min(1.0, current_prec / 10.0)
+        elif current_temp <= -2.0:
+            prec_factor = 0.7 + 1.5 * min(1.0, current_prec / 5.0)
         else:
             rain_fraction = (current_temp + 2.0) / 4.0
             rain_enh = 2.0 + 3.0 * min(1.0, current_prec / 10.0)
             snow_enh = 0.7 + 1.5 * min(1.0, current_prec / 5.0)
-            rain_enhancement = rain_fraction * rain_enh + (1.0 - rain_fraction) * snow_enh
-        prec_factor = rain_enhancement
+            prec_factor = rain_fraction * rain_enh + (1.0 - rain_fraction) * snow_enh
     else:
         prec_factor = 1.0
     
