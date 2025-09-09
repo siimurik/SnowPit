@@ -11,24 +11,9 @@ Heat Equation (Temperature T), Liquid Equation (Liquid Content Cl),
 Vapor Equation (Vapor Content Cv), Pressure Equation (Pore Pressure P).
 
     Heat:     ρcp ∂T/∂t = λ ∇²T + k_c ∇²Cl + ΔH εᴸ ∂Cl/∂t + k_p ∇²P
-    Liquid:   ∂Cl/∂t = D_eff(Cl) ∇²Cl + D_t ∇²T + D_p ∇²P - m_evap + S_snow
-    Vapor:    ∂Cv/∂t = D_v ∇²Cv + D_t_v ∇²T + D_p_v ∇²P + m_evap (+ S_subl)
+    Liquid:   ∂Cl/∂t = D_eff(Cl) ∇²Cl + D_t ∇²T + D_p ∇²P - m_evap
+    Vapor:    ∂Cv/∂t = D_v ∇²Cv + D_t_v ∇²T + D_p_v ∇²P + m_evap
     Pressure: ∂P/∂t = D_p_eff ∇²P + α_T ∇²T + α_L ∇²Cl + α_V ∇²Cv
-
-Physical meaning of the snow accumulation terms:
-  S_snow = Snow accumulation, melting and sublimation source term [kg/(m³·s)]
-  - Snow accumulation: S_snow > 0 when T_air ≤ 1°C and precipitation > 0.1 mm/h
-  - Snow melting: S_snow > 0 when T > 0.5°C and available snow content exists  
-  - Sublimation: S_snow < 0 when T < 0°C and relative humidity < 90%
-  
-  S_subl = Sublimation contribution to vapor phase [kg/(m³·s)]
-  - Direct solid-to-vapor transition in surface nodes
-  - Depends on: T < 0°C, RH < 90%, surface exposure
-
-Snow accumulation inputs:
-  - Environmental: T_air(t), precipitation(t), relative_humidity(t)
-  - Local state: T(x,t), Cl(x,t), spatial position x
-  - Physical parameters: penetration depth, melt coefficients, sublimation rates
 
 Physical meaning of the pressure term: 
   Pressure changes due to thermal expansion, liquid filling pores 
@@ -330,8 +315,8 @@ def get_prec_enhanced_h_l(ts, coors, mode=None, **kwargs):
     if current_prec > 0.1:
         if current_temp >= 2.0:
             rain_enhancement = 2.0 + 3.0 * min(1.0, current_prec / 10.0)
-        elif current_temp <= -2.0:
-            snow_enhancement = 0.7 + 1.5 * min(1.0, current_prec / 5.0)
+        #elif current_temp <= -2.0:                                         # ?
+        #    snow_enhancement = 0.7 + 1.5 * min(1.0, current_prec / 5.0)    # ?
         else:
             rain_fraction = (current_temp + 2.0) / 4.0
             rain_enh = 2.0 + 3.0 * min(1.0, current_prec / 10.0)
@@ -344,63 +329,9 @@ def get_prec_enhanced_h_l(ts, coors, mode=None, **kwargs):
     enhanced_h_l = base_h_l * temp_factor * wind_factor * humidity_factor * prec_factor
     enhanced_h_l = max(enhanced_h_l, 1e-8)
     enhanced_h_l = min(enhanced_h_l, 1e-3)
+    #print("Enhanced h_l", enhanced_h_l)
     
     val = nm.full((coors.shape[0], 1, 1), enhanced_h_l, dtype=nm.float64)
-    return {'val': val}
-
-def get_accumulated_snow_source(ts, coors, mode=None, equations=None, 
-                               term=None, problem=None, **kwargs):
-    """Snow accumulation and melting source term"""
-    if mode != 'qp' or coors is None:
-        return {}
-    
-    hour_idx = min(int(ts.time / 3600), len(prec) - 1)
-    current_prec = prec[hour_idx] if hour_idx < len(prec) else 0.0
-    current_temp = t_o[hour_idx] if hour_idx < len(t_o) else -5.0
-    
-    variables = problem.get_variables()
-    T_vals = variables['T'].get_state_in_region(problem.domain.regions['Omega']).flatten()
-    Cl_vals = variables['Cl'].get_state_in_region(problem.domain.regions['Omega']).flatten()
-    
-    n_nodes = len(T_vals)
-    snow_source = nm.zeros(n_nodes)
-    
-    snow_penetration_depth = 0.02
-    n_surface_nodes = max(1, int(snow_penetration_depth / dx))
-    
-    # Snow accumulation
-    if current_prec > 0.1 and current_temp <= 1.0:
-        snow_rate_flux = current_prec / 3600.0
-        snow_infiltration_rate = snow_rate_flux / snow_penetration_depth
-        
-        for i in range(min(n_surface_nodes, n_nodes)):
-            depth = i * dx
-            decay_factor = nm.exp(-depth / (snow_penetration_depth / 3.0))
-            snow_source[i] += snow_infiltration_rate * decay_factor * 0.1
-    
-    # Snow melting
-    for i in range(n_nodes):
-        if T_vals[i] > 0.5:
-            baseline_liquid = 0.01
-            potential_snow = max(0.0, Cl_vals[i] - baseline_liquid)
-            
-            if potential_snow > 0.001:
-                melt_rate_coeff = 2e-4
-                T_excess = T_vals[i] - 0.0
-                melt_rate = melt_rate_coeff * T_excess * potential_snow
-                max_melt = potential_snow / (2.0 * dt)
-                melt_rate = min(melt_rate, max_melt)
-                snow_source[i] += melt_rate
-    
-    # Sublimation
-    for i in range(min(n_surface_nodes, n_nodes)):
-        if T_vals[i] < 0.0:
-            current_rh_local = rh[hour_idx] if hour_idx < len(rh) else 70.0
-            if current_rh_local < 90.0:
-                sublimation_rate = 1e-6 * (90.0 - current_rh_local) / 90.0
-                snow_source[i] -= sublimation_rate
-    
-    val = snow_source.reshape((n_nodes, 1, 1))
     return {'val': val}
 
 def get_L_v_eps_L(ts, coors, mode=None, equations=None, term=None,
@@ -498,7 +429,6 @@ materials = {
     # Enhanced transport terms
     'evaporation_rate': 'get_evaporation_rate',
     'latent_heat_coeff': 'get_L_v_eps_L',
-    'snow_accumulation': 'get_accumulated_snow_source',
     'heat_moisture_coupling': 'get_heat_moist_coup',
 }
 
@@ -516,7 +446,6 @@ functions = {
     'get_L_v_eps_L': (get_L_v_eps_L,),
     'get_prec_enhanced_cl_ref': (get_prec_enhanced_cl_ref,),
     'get_prec_enhanced_h_l': (get_prec_enhanced_h_l,),
-    'get_accumulated_snow_source': (get_accumulated_snow_source,),
 }
 
 regions = {
@@ -545,7 +474,7 @@ variables = {
 
 integrals = {'i': 1,}
 
-# ENHANCED EQUATIONS with realistic pressure field
+# The governing PDEs of the system
 equations = {
     'Heat': """
             dw_dot.i.Omega(mat.rho_cp, s, dT/dt)
@@ -565,7 +494,6 @@ equations = {
             = - dw_volume_lvf.i.Omega(evaporation_rate.val, r)
               - dw_bc_newton.i.Gamma_Left(prec_h_l.val, prec_cl_ref.val, r, Cl)
               - dw_bc_newton.i.Gamma_Right(in_fixed.h_l_in, in_fixed.Cl_in, r, Cl)
-              + dw_volume_lvf.i.Omega(snow_accumulation.val, r)
             """,
                
     'Vapor': """
@@ -597,7 +525,7 @@ ics = {
     'ic_T': ('Omega', {'T.0': 0.0}),
     'ic_Cl': ('Omega', {'Cl.0': 0.015}),
     'ic_Cv': ('Omega', {'Cv.0': 0.006}),
-    'ic_P': ('Omega', {'P.0': P_base}),  # Initialize pressure to base value
+    'ic_P': ('Omega', {'P.0': P_base}),  
 }
 
 # Time and solver parameters
@@ -609,7 +537,7 @@ nr_of_steps = int(stop/dt)
 solvers = {
     'ls': ('ls.scipy_direct', {}),
     'newton': ('nls.newton', {
-        'i_max': 30,      # Increased for enhanced nonlinear system
+        'i_max': 10,      
         'eps_a': 1e-8,
         'eps_r': 1e-6,
         'is_linear': False,
