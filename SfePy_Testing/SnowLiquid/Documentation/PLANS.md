@@ -41,7 +41,7 @@ $$
 \mathbf{J_m} = -D_{\mathbf{p}} \nabla p
 $$
 
-The liquid flow rate in the porous media is given byDarcy’s law:
+The liquid flow rate in the porous media is given by Darcy’s law:
 
 $$
 \mathbf{J}_w = - \frac{k_s}{\mu} \nabla p
@@ -714,3 +714,131 @@ The DG example confirms this pattern:
 Your current approach is **mathematically correct** and **numerically valid**. The only improvement would be ensuring your finite difference calculation in `get_pressure_gradient_source()` is accurate, but the overall framework is sound.
 
 The DG example validates that `dw_volume_lvf` can indeed act as a divergence operator when you pre-calculate the divergence properly.
+
+Of course. These are all **Robin boundary conditions** (also called mixed boundary conditions of the third kind). They describe a flux that is proportional to the difference between the internal field variable and an external value.
+
+Here they are rewritten in a more formal LaTeX notation.
+
+---
+
+### Left Boundary ($x = 0$, Outer Surface)
+
+At this boundary, the flux of each quantity is proportional to the difference between its value at the surface and an external value.
+
+**Heat Transfer:**
+$$
+-k_t \frac{\partial T}{\partial x} \bigg|_{x=0} = h_{t,o} \left[ T(0, t) - T_o(t) \right]
+$$
+
+**Liquid Transport:**
+$$
+-D_l \frac{\partial C_l}{\partial x} \bigg|_{x=0} = h_{l,o} \left[ C_l(0, t) - C_{l,o}(t) \right]
+$$
+
+**Vapor Transport:**
+$$
+-D_v \frac{\partial C_v}{\partial x} \bigg|_{x=0} = h_{v,o} \left[ C_v(0, t) - C_{v,o}(t) \right]
+$$
+
+**Pressure:**
+$$
+-k_p \frac{\partial P}{\partial x} \bigg|_{x=0} = h_{p,o} \left[ P(0, t) - P_{\text{atm}} \right]
+$$
+
+---
+
+### Right Boundary ($x = d_{\text{ins}}$, Inner Surface)
+
+The same form applies at the right boundary, but with different proportionality constants and external values.
+
+**Heat Transfer:**
+$$
+-k_t \frac{\partial T}{\partial x} \bigg|_{x=d_{\text{ins}}} = h_{t,i} \left[ T(d_{\text{ins}}, t) - T_i \right]
+$$
+
+**Liquid Transport:**
+$$
+-D_l \frac{\partial C_l}{\partial x} \bigg|_{x=d_{\text{ins}}} = h_{l,i} \left[ C_l(d_{\text{ins}}, t) - C_{l,i} \right]
+$$
+
+**Vapor Transport:**
+$$
+-D_v \frac{\partial C_v}{\partial x} \bigg|_{x=d_{\text{ins}}} = h_{v,i} \left[ C_v(d_{\text{ins}}, t) - C_{v,i} \right]
+$$
+
+**Pressure:**
+$$
+-D_p \frac{\partial P}{\partial x} \bigg|_{x=d_{\text{ins}}} = h_{p,i} \left[ P(d_{\text{ins}}, t) - P_i \right]
+$$
+
+---
+
+### Summary
+
+All these equations are of the canonical Robin/mixed BC form:
+$$
+-\alpha \frac{\partial \psi}{\partial n} = \beta (\psi - \psi_{\text{external}})
+$$
+where $\alpha$ is a transport coefficient (e.g., $k_t, D_l$), $\frac{\partial \psi}{\partial n}$ is the derivative in the direction of the outward-facing normal, $\beta$ is a transfer coefficient (e.g., $h$), and $\psi_{\text{external}}$ is the external driving value.
+
+Of course. Here are the boundary conditions in LaTeX format.
+
+### Left Boundary ($x = 0$, Outer Surface)
+
+**Heat:**
+$$
+-\lambda \frac{\partial T}{\partial x} \bigg|_{x=0} = h_o \left( T - T_o \right) + \alpha \cdot I_{\text{solar}}
+$$
+
+**Liquid:**
+$$
+-D_l \frac{\partial C_l}{\partial x} \bigg|_{x=0} = m_{\text{rain}}(t)
+$$
+
+**Vapor:**
+$$
+-D_v \frac{\partial C_v}{\partial x} \bigg|_{x=0} = k_{\text{mass}} \left( \rho_{v,\text{sat}} - \rho_v \right)
+$$
+
+**Pressure:**
+$$
+-k_p \frac{\partial P}{\partial x} \bigg|_{x=0} = h_p \left( P - P_{\text{atm}} \right)
+$$
+
+---
+
+### Right Boundary ($x = d_{\text{ins}}$, Inner Surface)
+
+**Heat:**
+$$
+-\lambda \frac{\partial T}{\partial x} \bigg|_{x=d_{\text{ins}}} = h_i \left( T - 0 \right)
+$$
+
+**Liquid:**
+$$
+-D_l \frac{\partial C_l}{\partial x} \bigg|_{x=d_{\text{ins}}} = k_{\text{drain}} \cdot C_l
+$$
+
+**Vapor:**
+$$
+\frac{\partial C_v}{\partial x} \bigg|_{x=d_{\text{ins}}} = 0
+$$
+
+**Pressure:**
+$$
+P(d_{\text{ins}}, t) = P_{\text{atm}} + \rho_{\text{snow}} \cdot g \cdot d_{\text{ins}}
+$$
+
+## Boundary Conditions
+For the external drying surfaces of the sample, the boundary conditions are assumed to be of the following form
+
+$$
+\begin{aligned}
+& \left.\mathbf{J}_{\mathbf{w}}\right|_{x=0^{+}} \cdot \hat{\mathbf{n}}=h_{\mathrm{m}} c M_{\mathrm{v}} \ln \left(\frac{1-x_{\infty}}{1-\left.x_{\mathrm{v}}\right|_{x=0}}\right) \\
+& \left.\mathbf{J}_{\mathbf{e}}\right|_{x=0^{+}} \cdot \hat{\mathbf{n}}=h\left(\left.T\right|_{x=0}-T_{\infty}\right) \\
+& \left.P_{\mathrm{g}}\right|_{x=0^{+}}=P_{\mathrm{atm}}
+\end{aligned}
+$$
+
+where $\mathbf{J}_{\mathbf{w}}$ and $\mathbf{J}_{\mathbf{e}}$ represent the fluxes of total moisture and total enthalpy at the boundary, respectively, and x
+denotes the normal position from the boundary in the external medium.
