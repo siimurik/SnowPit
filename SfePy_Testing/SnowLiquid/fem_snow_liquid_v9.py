@@ -1,7 +1,6 @@
 r"""
 ==================================================================
-Enhanced Heat-Liquid-Vapor-Pressure Coupled Transport System with 
-Additional Moisture Movement Terms for Snow
+Enhanced Heat-Liquid-Vapor-Pressure Coupled Transport System for Snow
 ------------------------------------------------------------------
 Four-field coupled system with enhanced physics including 
 realistic pressure and snow accumulation/melting processes
@@ -18,20 +17,45 @@ Vapor Equation (Vapor Content Cv), Pressure Equation (Pore Pressure P).
 Physical meaning of the pressure term: 
   Pressure changes due to thermal expansion, liquid filling pores 
   and vapor pressure effects.
+
 ------------------------------------------------------------------
-BOUNDARY CONDITIONS:
+BOUNDARY CONDITIONS (Weak Form, as implemented in SfePy):
 
 Left Boundary (x = 0, Outer Surface):
-    Heat:        -λ ∂T/∂x = h_o(t) [T - T_o(t)]
-    Liquid:      -D_eff ∂Cl/∂x = h_l_o [Cl - Cl_o(t)]  
-    Vapor:       -D_v ∂Cv/∂x = h_v_o [Cv - Cv_o(t)]
-    Pressure:    -k_p ∂P/∂x = h_p_o [P - P_atm] (atmospheric pressure BC)
+    Heat:        -k_t ∂T/∂x = h_t_o [T - T_o(t)]
+        (Newton/Robin: dw_bc_newton.i.Gamma_Left)
+    Liquid:      -D_l ∂Cl/∂x = m_rain(t) 
+        (Prescribed flux: de_surface_flux.i.Gamma_Left)
+    Vapor:       -D_v ∂Cv/∂x = h_m·c·M_v·ln[(1-x_∞)/(1-x_v|_{x=0})]
+        (Prescribed flux: de_surface_flux.i.Gamma_Left)
+    Pressure:    -k_p ∂P/∂x = h_p_o [P - P_atm(t)]
+        (Newton/Robin: dw_bc_newton.i.Gamma_Left)
+
+    - precipitation_flux(t): computed from weather data, kg/(m²·s)
+    - vapor_log_flux(t): h_m · c · M_v · ln[(1-x_∞)/(1-x_v|_{x=0})]
+    - h_m : Mass transfer coefficient [m/s], typically 1e-7 ... 1e-5 for snow
+    - c   : Porosity [dimensionless], e.g., 0.4 ... 0.6 for snow
+    - M_v : Molar mass of vapor [kg/mol], 0.018 kg/mol for water vapor
+    - x_v : Local vapor mole fraction at boundary
+    - x_∞ : Ambient vapor mole fraction (from RH and T)
+    - h_p_o : Pressure transfer coefficient [m/s]
+    - P_atm : Atmospheric pressure [Pa]
 
 Right Boundary (x = d_ins, Inner Surface):
-    Heat:        -λ ∂T/∂x = h_i [T - T_i]
-    Liquid:      -D_eff ∂Cl/∂x = h_l_i [Cl - Cl_i]
+    Heat:        -k_t ∂T/∂x = h_t_i [T - T_i]
+        (Newton/Robin: dw_bc_newton.i.Gamma_Right)
+    Liquid:      -D_l ∂Cl/∂x = h_l_i [Cl - Cl_i]
+        (Newton/Robin: dw_bc_newton.i.Gamma_Right)
     Vapor:       -D_v ∂Cv/∂x = h_v_i [Cv - Cv_i]
-    Pressure:    -D_p ∂P/∂x = h_p_i [P - P_i]
+        (Newton/Robin: dw_bc_newton.i.Gamma_Right)
+    Pressure:    P = P_atm + ρ_snow·g·d_ins   
+        (Essential/Dirichlet BC)
+
+------------------------------------------------------------------
+NOTE: All boundary conditions are enforced in the weak form using SfePy terms:
+- dw_bc_newton: Newton/Robin (exchange) conditions
+- de_surface_flux: Prescribed flux (from weather or physics)
+- dw_volume_lvf: Volumetric source/sink (rain heat flux, evaporation)
 ==================================================================
 """
 
@@ -385,6 +409,108 @@ def get_rain_heat_flux(ts, coors, mode=None, **kwargs):
     
     val = nm.full((coors.shape[0], 1, 1), q_rain_vol, dtype=nm.float64)
     return {'val': val}
+
+def mole_fraction_vapor(P_v, P_total):
+    """Calculate vapor mole fraction."""
+    return P_v / max(P_total, 1.0)
+
+def get_log_mass_flux(ts, coors, mode=None, equations=None, term=None, problem=None, **kwargs):
+    """
+    Logarithmic vapor/liquid mass flux at the outer boundary.
+    J = h_m * c * M_v * ln((1-x_inf)/(1-x_v))
+    """
+    if mode != 'qp' or coors is None:
+        return {}
+    # Realistic values for snow
+    h_m = 2e-6      # m/s (mass transfer coefficient for snow, can tune)
+    c = 0.45        # Porosity for snow
+    M_v = 0.018     # kg/mol water vapor
+
+    hour_idx = min(int(ts.time / 3600), len(rh) - 1)
+    T_air = airTemp[hour_idx] if hour_idx < len(airTemp) else 0.0
+    RH_air = rh[hour_idx] if hour_idx < len(rh) else 70.0
+
+    # Ambient vapor pressure
+    T_K = T_air + 273.15
+    P_sat = Psat_WV(T_K)  # Pa
+    P_v_inf = P_sat * RH_air / 100.0
+    x_inf = mole_fraction_vapor(P_v_inf, p_atm)
+
+    # Local vapor content at boundary from field variable
+    variables = problem.get_variables()
+    Cv_vals = variables['Cv'].get_state_in_region(problem.domain.regions['Gamma_Left']).flatten()
+    P_v_local = Cv_vals * R_v * T_K / M_v  # (Invert ideal gas law)
+    x_v = mole_fraction_vapor(P_v_local, p_atm)
+
+    # Avoid log(0) and negative values
+    x_inf = nm.clip(x_inf, 1e-6, 0.99)
+    x_v = nm.clip(x_v, 1e-6, 0.99)
+
+    flux = h_m * c * M_v * nm.log((1-x_inf)/(1-x_v))
+    val = flux.reshape((flux.shape[0], 1, 1))
+    return {'val': val}
+
+# If you want the same for liquid (assuming a similar mole fraction approach, adjust if needed):
+def get_log_liquid_flux(ts, coors, mode=None, equations=None, term=None, problem=None, **kwargs):
+    """Logarithmic liquid mass flux at outer boundary (similar mechanism)."""
+    if mode != 'qp' or coors is None:
+        return {}
+    h_m = 2e-6
+    c = 0.45
+    M_v = 0.018
+
+    hour_idx = min(int(ts.time / 3600), len(rh) - 1)
+    T_air = airTemp[hour_idx] if hour_idx < len(airTemp) else 0.0
+    RH_air = rh[hour_idx] if hour_idx < len(rh) else 70.0
+
+    T_K = T_air + 273.15
+    P_sat = Psat_WV(T_K)
+    P_v_inf = P_sat * RH_air / 100.0
+    x_inf = mole_fraction_vapor(P_v_inf, p_atm)
+
+    variables = problem.get_variables()
+    Cl_vals = variables['Cl'].get_state_in_region(problem.domain.regions['Gamma_Left']).flatten()
+    # Map Cl to vapor mole fraction via equilibrium: (simplified, tune as needed)
+    x_v = nm.clip(Cl_vals/(1000.0), 1e-6, 0.99)  # Example scaling for snow
+
+    flux = h_m * c * M_v * nm.log((1-x_inf)/(1-x_v))
+    val = flux.reshape((flux.shape[0], 1, 1))
+    return {'val': val}
+
+def get_p_atm_left(ts, coors, **kwargs):
+    return nm.full(coors.shape[0], p_atm, dtype=nm.float64)
+
+def get_p_atm_right(ts, coors, **kwargs):
+    g = 9.81
+    P_right = p_atm + rho_wet * g * d_ins
+    return nm.full(coors.shape[0], P_right, dtype=nm.float64)
+
+def get_precipitation_flux(ts, coors, mode=None, **kwargs):
+    """
+    Returns precipitation mass flux [kg/(m²·s)] at the outer boundary.
+    Uses weather data (precipitation rate, temp, etc).
+    """
+    if mode != 'qp' or coors is None:
+        return {}
+    # Index based on simulation time
+    hour_idx = min(int(ts.time / 3600), len(prec) - 1)
+    current_prec = prec[hour_idx] if hour_idx < len(prec) else 0.0 # mm/h
+    current_temp = airTemp[hour_idx] if hour_idx < len(airTemp) else 0.0
+
+    # Convert precipitation rate to kg/(m²·s)
+    # 1 mm/h = 1e-3 m / 3600 s = 2.78e-7 m/s
+    # Multiply by density of water (1000 kg/m³)
+    if current_temp >= 0.0:
+        # Rain (liquid)
+        m_rain = current_prec * 2.78e-7 * 1000.0
+    else:
+        # Snow (solid, optionally ignore or adjust density)
+        snow_density = 100.0 # kg/m³ typical fresh snow
+        m_rain = current_prec * 2.78e-7 * snow_density
+
+    val = nm.full((coors.shape[0], 1, 1), m_rain, dtype=nm.float64)
+    return {'val': val}
+
 ###############################################################################
 #                                MAIN SECTION                                 #
 ###############################################################################
@@ -441,7 +567,12 @@ materials = {
     'prec_cl_ref': 'get_prec_enhanced_cl_ref',
     'prec_h_l': 'get_prec_enhanced_h_l',
     'rain_heat_flux': 'get_rain_heat_flux',
-
+    # new 
+    'log_mass_flux_vapor': 'get_log_mass_flux',
+    #'log_mass_flux_liquid': 'get_log_liquid_flux',
+    'precipitation_flux': 'get_precipitation_flux',
+    'p_atm_left': 'get_p_atm_left',
+    'p_atm_right': 'get_p_atm_right',
     
     # Fixed boundary conditions
     'in_fixed': ({'h_in': h_i, 'T_in': t_i, 'h_l_in': h_l_i, 
@@ -470,6 +601,10 @@ functions = {
     'get_prec_enhanced_cl_ref': (get_prec_enhanced_cl_ref,),
     'get_prec_enhanced_h_l': (get_prec_enhanced_h_l,),
     'get_rain_heat_flux': (get_rain_heat_flux,),
+    'get_log_mass_flux': (get_log_mass_flux,),
+    'get_precipitation_flux': (get_precipitation_flux,),
+    'get_p_atm_left': (get_p_atm_left,),
+    'get_p_atm_right': (get_p_atm_right,),
 }
 
 regions = {
@@ -517,8 +652,9 @@ equations = {
             + dw_laplace.i.Omega(thermal_mat.D_t, r, T)
             + dw_laplace.i.Omega(pressure_liquid_mat.D_p, r, P)
             = - dw_volume_lvf.i.Omega(evaporation_rate.val, r)
-              - dw_bc_newton.i.Gamma_Left(prec_h_l.val, prec_cl_ref.val, r, Cl)
+               - de_surface_flux.i.Gamma_Left(precipitation_flux.val, r, Cl)
               - dw_bc_newton.i.Gamma_Right(in_fixed.h_l_in, in_fixed.Cl_in, r, Cl)
+              + dw_volume_lvf.i.Omega(rain_heat_flux.val, s)
             """,
                
     'Vapor': """
@@ -527,7 +663,7 @@ equations = {
             + dw_laplace.i.Omega(thermal_vapor_mat.D_t_v, w, T)
             + dw_laplace.i.Omega(pressure_vapor_mat.D_p_v, w, P)
             = + dw_volume_lvf.i.Omega(evaporation_rate.val, w)
-              - dw_bc_newton.i.Gamma_Left(h_v_out_dyn.val, cv_out_dyn.val, w, Cv)
+              - de_surface_flux.i.Gamma_Left(log_mass_flux_vapor.val, w, Cv)
               - dw_bc_newton.i.Gamma_Right(in_fixed.h_v_in, in_fixed.Cv_in, w, Cv)
             """,
     
@@ -538,12 +674,19 @@ equations = {
             + dw_laplace.i.Omega(pressure_liquid.alpha_L, q, Cl)
             + dw_laplace.i.Omega(pressure_vapor.alpha_V, q, Cv)
             = - dw_bc_newton.i.Gamma_Left(h_p_out_dyn.val, p_atm_dyn.val, q, P)
-              - dw_bc_newton.i.Gamma_Right(in_fixed.h_p_in, in_fixed.P_in, q, P)
             """
 }
 
 # Boundary conditions (empty but required)
-ebcs = {}
+ebcs = {
+    'Pressure_Right': ('Gamma_Right', {'P.0': 'get_p_atm_right'}),
+}
+
+# Essential boundary conditions 
+#ebcs = {    
+#    'Pressure_Left': ('Gamma_Left', {'P.0': 'get_p_atm_left'}),
+#    'Pressure_Right': ('Gamma_Right', {'P.0': 'get_p_atm_right'}),
+#}
 
 # Initial conditions
 ics = {
@@ -554,7 +697,7 @@ ics = {
 }
 
 # Time and solver parameters
-nr_of_hours = 2
+nr_of_hours = 10
 stop = nr_of_hours * 3600.0
 dt = 10.0
 nr_of_steps = int(stop/dt)
@@ -579,7 +722,7 @@ solvers = {
 def save_enhanced_results(out, problem, state, extend=False):
     """Enhanced results saving with pressure field"""
     
-    filename = os.path.join(problem.conf.options['output_dir'], "enhanced_moisture_pressure_results_v8.csv")
+    filename = os.path.join(problem.conf.options['output_dir'], "enhanced_moisture_pressure_results_v9.csv")
     header = [
         "Time (s)", "Node Index", "Position (m)", 
         "Temperature (°C)", "Liquid Content (kg/m³)", "Vapor Content (kg/m³)",
@@ -625,5 +768,5 @@ options = {
     'ts': 'ts',
     'save_times': [3600*i for i in range(1, nr_of_hours + 1)],
     'post_process_hook': save_enhanced_results,
-    'output_dir': './output_snow_pressure_v8',
+    'output_dir': './output_snow_v9',
 }
