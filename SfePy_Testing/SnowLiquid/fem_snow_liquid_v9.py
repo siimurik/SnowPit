@@ -23,13 +23,16 @@ BOUNDARY CONDITIONS (Weak Form, as implemented in SfePy):
 
 Left Boundary (x = 0, Outer Surface):
     Heat:        -k_t ∂T/∂x = h_t_o [T - T_o(t)]
-        (Newton/Robin: dw_bc_newton.i.Gamma_Left)
     Liquid:      -D_l ∂Cl/∂x = m_rain(t) 
-        (Prescribed flux: de_surface_flux.i.Gamma_Left)
     Vapor:       -D_v ∂Cv/∂x = h_m·c·M_v·ln[(1-x_∞)/(1-x_v|_{x=0})]
-        (Prescribed flux: de_surface_flux.i.Gamma_Left)
-    Pressure:    -k_p ∂P/∂x = h_p_o [P - P_atm(t)]
-        (Newton/Robin: dw_bc_newton.i.Gamma_Left)
+    Pressure:    -k_p ∂P/∂x = P_atm(t)
+
+Right Boundary (x = d_ins, Inner Surface):
+    Heat:        -k_t ∂T/∂x  = h_t_i [T - T_i]
+    Liquid:      -D_l ∂Cl/∂x = h_l_i [Cl - Cl_i]
+    Vapor:       -D_v ∂Cv/∂x = h_v_i [Cv - Cv_i]
+    Pressure:    -k_p ∂P/∂x  = h_p_i [P - P_atm(t)]  
+
 
     - precipitation_flux(t): computed from weather data, kg/(m²·s)
     - vapor_log_flux(t): h_m · c · M_v · ln[(1-x_∞)/(1-x_v|_{x=0})]
@@ -40,16 +43,6 @@ Left Boundary (x = 0, Outer Surface):
     - x_∞ : Ambient vapor mole fraction (from RH and T)
     - h_p_o : Pressure transfer coefficient [m/s]
     - P_atm : Atmospheric pressure [Pa]
-
-Right Boundary (x = d_ins, Inner Surface):
-    Heat:        -k_t ∂T/∂x = h_t_i [T - T_i]
-        (Newton/Robin: dw_bc_newton.i.Gamma_Right)
-    Liquid:      -D_l ∂Cl/∂x = h_l_i [Cl - Cl_i]
-        (Newton/Robin: dw_bc_newton.i.Gamma_Right)
-    Vapor:       -D_v ∂Cv/∂x = h_v_i [Cv - Cv_i]
-        (Newton/Robin: dw_bc_newton.i.Gamma_Right)
-    Pressure:    P = P_atm + ρ_snow·g·d_ins   
-        (Essential/Dirichlet BC)
 
 ------------------------------------------------------------------
 NOTE: All boundary conditions are enforced in the weak form using SfePy terms:
@@ -634,6 +627,7 @@ variables = {
 integrals = {'i': 1,}
 
 # The governing PDEs of the system
+# Fix the Liquid equation - remove the duplicate rain_heat_flux term
 equations = {
     'Heat': """
             dw_dot.i.Omega(mat.rho_cp, s, dT/dt)
@@ -641,20 +635,20 @@ equations = {
             + dw_laplace.i.Omega(coupling_mat.k_c, s, Cl)
             + dw_laplace.i.Omega(pressure_heat_mat.k_p, s, P)
             + dw_dot.i.Omega(latent_heat_coeff.val, s, dCl/dt)
+            + dw_volume_lvf.i.Omega(rain_heat_flux.val, s)
             = - dw_bc_newton.i.Gamma_Left(h_out_dyn.val, T_out_dyn.val, s, T)
               - dw_bc_newton.i.Gamma_Right(in_fixed.h_in, in_fixed.T_in, s, T)
-              + dw_volume_lvf.i.Omega(rain_heat_flux.val, s)
+              
             """,
              
     'Liquid': """
             dw_dot.i.Omega(r, dCl/dt)
             + dw_laplace.i.Omega(liquid_mat.D_l, r, Cl)
             + dw_laplace.i.Omega(thermal_mat.D_t, r, T)
-            + dw_laplace.i.Omega(pressure_liquid_mat.D_p, r, P)
-            = - dw_volume_lvf.i.Omega(evaporation_rate.val, r)
-               - de_surface_flux.i.Gamma_Left(precipitation_flux.val, r, Cl)
+            + dw_laplace.i.Omega(pressure_liquid_mat.D_p, r, P) 
+            - dw_volume_lvf.i.Omega(evaporation_rate.val, r)
+            = + dw_surface_ltr.i.Gamma_Left(precipitation_flux.val, r)
               - dw_bc_newton.i.Gamma_Right(in_fixed.h_l_in, in_fixed.Cl_in, r, Cl)
-              + dw_volume_lvf.i.Omega(rain_heat_flux.val, s)
             """,
                
     'Vapor': """
@@ -662,24 +656,26 @@ equations = {
             + dw_laplace.i.Omega(vapor_mat.D_v, w, Cv)
             + dw_laplace.i.Omega(thermal_vapor_mat.D_t_v, w, T)
             + dw_laplace.i.Omega(pressure_vapor_mat.D_p_v, w, P)
-            = + dw_volume_lvf.i.Omega(evaporation_rate.val, w)
-              - de_surface_flux.i.Gamma_Left(log_mass_flux_vapor.val, w, Cv)
+            + dw_volume_lvf.i.Omega(evaporation_rate.val, w)
+            = + dw_surface_ltr.i.Gamma_Left(log_mass_flux_vapor.val, w)
               - dw_bc_newton.i.Gamma_Right(in_fixed.h_v_in, in_fixed.Cv_in, w, Cv)
             """,
-    
+#               Gamma_Right is isolated (no vapor flux) ∂Cv/∂x = 0  
+#              
+
     'Pressure': """
             dw_dot.i.Omega(q, dP/dt)
             + dw_laplace.i.Omega(pressure_mat.D_p_eff, q, P)
             + dw_laplace.i.Omega(pressure_thermal.alpha_T, q, T)
             + dw_laplace.i.Omega(pressure_liquid.alpha_L, q, Cl)
             + dw_laplace.i.Omega(pressure_vapor.alpha_V, q, Cv)
-            = - dw_bc_newton.i.Gamma_Left(h_p_out_dyn.val, p_atm_dyn.val, q, P)
+            = - dw_bc_newton.i.Gamma_Right(in_fixed.h_p_in, in_fixed.P_in, q, P)
             """
 }
 
 # Boundary conditions (empty but required)
 ebcs = {
-    'Pressure_Right': ('Gamma_Right', {'P.0': 'get_p_atm_right'}),
+    'Pressure_Left': ('Gamma_Left', {'P.0': 'get_p_atm_left'}),
 }
 
 # Essential boundary conditions 
