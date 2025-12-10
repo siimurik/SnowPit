@@ -391,15 +391,20 @@ if USE_ADVANCED_INSULATION:
     alpha_hist[-1]  = InsState["alpha_eff"]
     Rins_hist[-1]   = R_ins
     fsat_hist[-1]   = InsState["f_sat"]
+    print(" W_hist     = ", W_hist[-1])
+    print(" k_eff_hist = ", k_eff_hist[-1])
+    print(" alpha_hist = ", alpha_hist[-1])
+    print(" Rins_hist  = ", Rins_hist[-1])
+    print(" fsat_hist  = ", fsat_hist[-1])
 
 # ============================================================
 #  Energy diagnostics
 # ============================================================
-E_a     = np.trapz(qa_hist,      t_vec)
-E_solar = np.trapz(qsolar_hist,  t_vec)
-E_rain  = np.trapz(qrain_hist,   t_vec)
-E_evap  = np.trapz(qevap_hist,   t_vec)
-E_g     = np.trapz(qground_hist, t_vec)
+E_a     = np.trapezoid(qa_hist,      t_vec)
+E_solar = np.trapezoid(qsolar_hist,  t_vec)
+E_rain  = np.trapezoid(qrain_hist,   t_vec)
+E_evap  = np.trapezoid(qevap_hist,   t_vec)
+E_g     = np.trapezoid(qground_hist, t_vec)
 E_total_in = E_a + E_solar + E_rain + E_evap + E_g
 
 E_snow_change = Cs_layer * np.sum(T_hist[-1,:] - T_hist[0,:])
@@ -412,6 +417,19 @@ print(f"E_snow_change   = {E_snow_change:.3e} J/m^2")
 print(f"E_melt          = {E_melt:.3e} J/m^2")
 print(f"Energy residual = {E_balance:.3e} J/m^2")
 print(f"Total melted snow thickness = {M_melt:.3f} m")
+print(" E_air           = ", E_a, " J/m²")
+print(" E_solar         = ", E_solar, " J/m²")
+print(" E_rain          = ", E_rain, " J/m²")
+print(" E_evap          = ", E_evap, " J/m²")
+print(" E_ground        = ", E_g, " J/m²")
+print(" E_total_in      = ", E_total_in, " J/m²")
+ 
+print(" E_snow_change   = ", E_snow_change, " J/m²")
+print(" E_melt          = ", E_melt, " J/m²")
+print(" Energy residual = ", E_balance, " J/m²")
+
+print(" Total melted snow thickness = ", M_melt, " m")
+#print *, "============================================================"
 
 # ============================================================
 #  Plots
@@ -519,4 +537,4 @@ if USE_ADVANCED_INSULATION:
     plt.xlabel('Time [days]')
     plt.title('Relationship between insulation moisture and cumulative melt')
 
-plt.show()
+#plt.show()
