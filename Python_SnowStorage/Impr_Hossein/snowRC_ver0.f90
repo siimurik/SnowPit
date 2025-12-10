@@ -14,8 +14,8 @@ module types_module
     end type InsulationParameters
     
     type InsulationState
-        double precision :: W, age_days             ! State variables
-        double precision :: k_eff, alpha_eff, f_sat ! Diagnostic outputs
+        double precision :: W, age_days            ! State variables
+        double precision :: k_eff, alpha_eff, f_sat  ! Diagnostic outputs
     end type InsulationState
     
     type Forcing
@@ -203,25 +203,25 @@ program main
     end if
 
     ! Optional: Print some values to verify
-    !print *, "Physical constants:"
-    !print '(A, F12.8)', " sigma = ", sigma
-    !print '(A, F12.4)', " rho_w = ", rho_w
-    !print '(A, F12.2)', " c_w = ", c_w
-    !print '(A, F12.6)', " Tfreeze = ", Tfreeze
-    !    
-    !if (USE_ADVANCED_INSULATION) then
-    !    print *, "Advanced insulation:"
-    !    print '(A, F8.4)', " InsPar%k_dry = ", InsPar%k_dry
-    !    print '(A, F8.4)', " InsPar%k_sat = ", InsPar%k_sat
-    !    print '(A, F8.2)', " InsState%W = ", InsState%W
-    !end if
+    print *, "Physical constants:"
+    print '(A, F12.8)', " sigma = ", sigma
+    print '(A, F12.4)', " rho_w = ", rho_w
+    print '(A, F12.2)', " c_w = ", c_w
+    print '(A, F12.6)', " Tfreeze = ", Tfreeze
+        
+    if (USE_ADVANCED_INSULATION) then
+        print *, "Advanced insulation:"
+        print '(A, F8.4)', " InsPar%k_dry = ", InsPar%k_dry
+        print '(A, F8.4)', " InsPar%k_sat = ", InsPar%k_sat
+        print '(A, F8.2)', " InsState%W = ", InsState%W
+    end if
 
     ! ============================================================
     !  Time integration settings
     ! ============================================================
     t0 = 0.0D0
-    tf = 120.0D0 * 24.0D0 * 3600.0D0    ! 120 days
-    dt = 600.0D0                        ! 10 minutes
+    tf = 120.0D0 * 24.0D0 * 3600.0D0   ! 120 days
+    dt = 600.0D0                   ! 10 minutes
     
     ! Use arange function directly (no pre-allocation needed)
     t_vec = arange(t0, tf + dt, dt)
@@ -268,9 +268,31 @@ program main
         t_mid = t + dt / 2.0D0
         
         ! --- forcing at mid-step ---
+        !forc%Isolar = Isolar_fun(t_mid)
+        !forc%Prain  = Prain_fun(t_mid)
+        !forc%T_rain = 273.15D0 + 3.0D0
+        !forc%RH     = 0.80D0
+        !forc%Ta     = Ta_fun(t_mid)
         call set_forcing(t_mid, forc)
         
         ! --- insulation: choose simple or advanced model ---
+        !if (USE_ADVANCED_INSULATION) then
+        !    call insulation_step(InsState, forc, InsPar, dt, R_ins, &
+        !                        q_solar_ins, q_rain_snow, q_evap_val, InsState)
+        !    
+        !    W_hist(k)     = InsState%W
+        !    k_eff_hist(k) = InsState%k_eff
+        !    alpha_hist(k) = InsState%alpha_eff
+        !    Rins_hist(k)  = R_ins
+        !    fsat_hist(k)  = InsState%f_sat
+        !else
+        !    ! SIMPLE CONSTANT MODEL
+        !    R_ins       = Hi / k_i_const
+        !    q_solar_ins = alpha_const * forc%Isolar
+        !    q_rain_snow = eta_rain_const * rho_w * c_w * &
+        !                 forc%Prain * (forc%T_rain - Tfreeze)
+        !    q_evap_val  = 0.0D0
+        !end if
         ! Compute insulation (advanced or simple)
         call get_insulation_properties(USE_ADVANCED_INSULATION, InsState, forc, InsPar, &
                                     dt, Hi, k_i_const, alpha_const, eta_rain_const, &
@@ -278,6 +300,51 @@ program main
                                     R_ins, q_solar_ins, q_rain_snow, q_evap_val)
         
         !! total air → surface snow resistance
+        !R_a2s = R_eff + R_ins
+        !
+        !! --- RK4 integration of snow temperatures ---
+        !call dTdt(t, Temp, R_a2s, q_solar_ins, q_rain_snow, q_evap_val, &
+        !             R_nm, Cs_layer, Tg, k1_vec)
+        !
+        !call dTdt(t + dt/2.0D0, Temp + dt*k1_vec/2.0D0, &
+        !             R_a2s, q_solar_ins, q_rain_snow, q_evap_val, &
+        !             R_nm, Cs_layer, Tg, k2_vec)
+        !
+        !call dTdt(t + dt/2.0D0, Temp + dt*k2_vec/2.0D0, &
+        !             R_a2s, q_solar_ins, q_rain_snow, q_evap_val, &
+        !             R_nm, Cs_layer, Tg, k3_vec)
+        !
+        !call dTdt(t + dt, Temp + dt*k3_vec, &
+        !             R_a2s, q_solar_ins, q_rain_snow, q_evap_val, &
+        !             R_nm, Cs_layer, Tg, k4_vec)
+        !
+        !T_new = Temp + (dt/6.0D0) * (k1_vec + 2.0D0*k2_vec + 2.0D0*k3_vec + k4_vec)
+        !! RK4 time integration
+        !!call step_RK4(t, dt, Temp, R_eff, R_ins, q_solar_ins, q_rain_snow, &
+        !!            q_evap_val, R_nm, Cs_layer, Tg, T_new)
+        !
+        !! --- fluxes at mid-step for melt & diagnostics ---
+        !Ta_mid   = Ta_fun(t_mid)
+        !T1_mid   = Temp(1)
+        !q_a_mid  = (Ta_mid - T1_mid) / R_a2s
+        !q_surf_mid = q_a_mid + q_solar_ins + q_rain_snow + q_evap_val
+        !q_ground_mid = ground_flux(Temp(3), Tg, R_3g)
+        !
+        !! --- melting clamp at surface ---
+        !if (T_new(1) > Tfreeze) then
+        !    T_new(1) = Tfreeze
+        !    if (q_surf_mid > 0.0D0) then
+        !        dE_melt = q_surf_mid * dt
+        !        dM_melt = dE_melt / (rho_i * Lf)
+        !    else
+        !        dE_melt = 0.0D0
+        !        dM_melt = 0.0D0
+        !    end if
+        !    E_melt = E_melt + dE_melt
+        !    melt_rate_hist(k) = dM_melt / dt
+        !else
+        !    melt_rate_hist(k) = 0.0D0
+        !end if
         
         ! RK4 time integration
         call step_RK4(t, dt, Temp, R_eff, R_ins, q_solar_ins, q_rain_snow, &
@@ -308,14 +375,12 @@ program main
         Isolar_hist(k) = Isolar_fun(t)
         Prain_hist(k)  = Prain_fun(t)
 
-        ! BROKEN!!!
         !call save_timestep_data(k, t, Temp, q_a_mid, q_surf_mid, q_solar_ins, &
         !            q_rain_snow, q_evap_val, q_ground_mid, &
         !            T_hist, qa_hist, qnet_surf_hist, qsolar_hist, &
         !            qrain_hist, qevap_hist, qground_hist, &
         !            Ta_hist, Isolar_hist, Prain_hist, Nt)
         
-        ! BROKEN!!!
         !if (USE_ADVANCED_INSULATION) then
         !        call save_insulation_data(k, InsState, R_ins, W_hist, k_eff_hist, &
         !                                alpha_hist, Rins_hist, fsat_hist, Nt)
@@ -335,7 +400,6 @@ program main
         fsat_hist(Nt)  = InsState%f_sat
     end if
 
-    ! BROKEN!!!
     !call save_final_timestep(Nt, t_vec, USE_ADVANCED_INSULATION, InsState, R_ins, &
     !                    Ta_hist, Isolar_hist, Prain_hist, &
     !                    W_hist, k_eff_hist, alpha_hist, Rins_hist, fsat_hist)
