@@ -46,7 +46,7 @@ program main
     double precision, dimension(3) :: Temp, R_nm
     double precision, allocatable, dimension(:) :: t_vec
     double precision :: t0, tf, dt, t, t_mid
-    type(Forcing) :: forc
+    type(Forcing)    :: forc
     double precision :: R_ins, q_solar_ins, q_rain_snow, q_evap_val
     !double precision :: R_a2s
     !double precision, dimension(3) :: k1_vec, k2_vec, k3_vec, k4_vec, 
@@ -223,7 +223,9 @@ program main
     tf = 120.0D0 * 24.0D0 * 3600.0D0    ! 120 days
     dt = 600.0D0                        ! 10 minutes
     
-    ! Use arange function directly (no pre-allocation needed)
+    ! Use arange function directly 
+    Nt = floor((tf - t0) / dt) + 1
+    allocate(t_vec(Nt))
     t_vec = arange(t0, tf + dt, dt)
     Nt = size(t_vec)  ! Get actual size from function
     
@@ -524,7 +526,7 @@ end subroutine dTdt
 !  Insulation step (advanced model)
 ! ============================================================
 subroutine insulation_step(state_in, forc, p, delta_t, R_ins, q_solar, &
-                        q_rain_snow, q_evap, state_out)
+                            q_rain_snow, q_evap, state_out)
     ! Advanced insulation model with moisture, age, rain, and evaporation
     use types_module
     implicit none
