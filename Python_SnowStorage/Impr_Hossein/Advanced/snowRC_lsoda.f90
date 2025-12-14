@@ -233,6 +233,8 @@ program main
     dt = 600.0D0                        ! 10 minutes
     
     ! Use arange function directly (no pre-allocation needed)
+    Nt = floor((tf - t0) / dt) + 1
+    allocate(t_vec(Nt))
     t_vec = arange(t0, tf + dt, dt)
     Nt = size(t_vec)  ! Get actual size from function
     
