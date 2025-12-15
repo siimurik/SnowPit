@@ -1,6 +1,6 @@
 ! Compile with DOPRI5 subroutines:
 ! gfortran -O2 snowRC_adv.f90 dopri5.f90 YBER_ODEPACK.f90 ODEPACK_MODULES.f90 -o snow -lopenblas
-! gfortran snowRC_adv.f90 dopri5.f90 YBER_ODEPACK.f90 ODEPACK_MODULES.f90 lapack.f90 lapackc.f90 dc_lapack.f90 -o snow 
+! gfortran snowRC_adv.f90 dopri5.f90 YBER_ODEPACK.f90 ODEPACK_MODULES.f90 lapack.f90 lapackc.f90 dc_lapack.f90 -o snow -z noexecstack
 
 module types_module
     implicit none
