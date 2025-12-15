@@ -16,7 +16,7 @@ from datetime import datetime
 USE_ADVANCED_INSULATION = True
 USE_REFREEZING = True
 USE_PERCOLATION = True
-USE_MULTILAYER_INSULATION = True  # NEW: Enable multi-layer insulation
+USE_MULTILAYER_INSULATION = True
 
 # ---------- Physical constants ----------
 sigma   = 5.670374419e-8      # Stefan-Boltzmann [W/m^2 K^4]
@@ -347,15 +347,17 @@ def ground_flux(T3):
 # ============================================================
 #  dT/dt for snow layers
 # ============================================================
-def dTdt(Tv, stepPar):
+def dTdt(t, Tv, stepPar, met_data, dt_data):
     """
     Tv = [T1, T2, T3]
     stepPar: dict with R_a2s, q_solar, q_rain, q_evap
     """
     T1, T2, T3 = Tv
-    Ta = stepPar["Ta"]
-
-    q_a    = (Ta - T1) / stepPar["R_a2s"]
+    
+    # Get Ta at the specific time point
+    Ta = interpolate_data(met_data['temp'], t, dt_data) + 273.15
+    
+    q_a = (Ta - T1) / stepPar["R_a2s"]
     q_surf = q_a + stepPar["q_solar"] + stepPar["q_rain"] + stepPar["q_evap"]
 
     q_12 = (T2 - T1) / R_12
@@ -567,11 +569,11 @@ def main():
         }
         
         # RK4 integration
-        k1_vec = dTdt(t,          T,           stepPar)
-        k2_vec = dTdt(t + dt/2.0, T + dt*k1_vec/2.0, stepPar)
-        k3_vec = dTdt(t + dt/2.0, T + dt*k2_vec/2.0, stepPar)
-        k4_vec = dTdt(t + dt,     T + dt*k3_vec,     stepPar)
-        T_new  = T + (dt/6.0) * (k1_vec + 2*k2_vec + 2*k3_vec + k4_vec)
+        k1_vec = dTdt(t, T, stepPar, met_data, dt_data)
+        k2_vec = dTdt(t + dt/2.0, T + dt*k1_vec/2.0, stepPar, met_data, dt_data)
+        k3_vec = dTdt(t + dt/2.0, T + dt*k2_vec/2.0, stepPar, met_data, dt_data)
+        k4_vec = dTdt(t + dt, T + dt*k3_vec, stepPar, met_data, dt_data)
+        T_new = T + (dt/6.0) * (k1_vec + 2*k2_vec + 2*k3_vec + k4_vec)
         
         # Calculate fluxes
         T1_mid   = T[0]
@@ -584,7 +586,7 @@ def main():
         if USE_REFREEZING:
             for i in range(3):
                 T_new[i], LWC[i], ice_fractions[i], refrozen = \
-                    refreezing_layer(T_new[i], LWC[i], ice_fractions[i], dt)
+                    refreezing_layer(T_new[i], LWC[i], ice_fractions[i])
                 total_refrozen += refrozen
         
         refrozen_hist[k] = total_refrozen
