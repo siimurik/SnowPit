@@ -1844,9 +1844,11 @@
 !                                                                       
 ! 800  MSG = 'DLSODA-  Run aborted.. apparent infinite loop.    '       
 !      CALL XERRWD (MSG, 50, 303, 2, 0, 0, 0, 0, 0.0D0, 0.0D0)          
-  800 common_data%error_message =                                       &
-     & common_data%error_message//                                      &
-     & ' Run aborted. apparent infinite loop.'                          
+  800 BLOCK
+        CHARACTER(LEN=200) :: tmp_msg  ! Use a fixed length instead of LEN=:
+        tmp_msg = TRIM(common_data%error_message) // ' Run aborted. apparent infinite loop.'
+        common_data%error_message = TRIM(tmp_msg)
+      END BLOCK                       
       RETURN 
 !----------------------- End of Subroutine DLSODA ----------------------
       END                                           
@@ -3940,10 +3942,12 @@
 !                                                                       
 ! 800  MSG = 'DLSODAR-  Run aborted.. apparent infinite loop.   '       
 !      CALL XERRWD (MSG, 50, 303, 2, 0, 0, 0, 0, 0.0D0, 0.0D0)          
-  800 common_data%error_message =                                       &
-     & common_data%error_message//                                      &
-     & ' Run aborted. apparent infinite loop.'                          
-      RETURN 
+  800 BLOCK
+        CHARACTER(LEN=200) :: tmp_msg
+        tmp_msg = TRIM(common_data%error_message) // ' Run aborted. apparent infinite loop.'
+        common_data%error_message = TRIM(tmp_msg)
+      END BLOCK
+      RETURN
 !----------------------- End of Subroutine DLSODAR ---------------------
       END                                           
                                                                         
@@ -4403,6 +4407,7 @@
 !-----------------------------------------------------------------------
 ! This code associates variables with common data                       
 !-----------------------------------------------------------------------
+      IF (TEM(1) == TEM(1)) CONTINUE ! To supress compiler warnings
       DLS001 => common_data%DLS001 
                                                                         
       tmp_ptr = c_loc(DLS001%reals(1)) 
@@ -6555,7 +6560,10 @@
 !                                                                       
       INTEGER LUNIT, IXSAV, MESFLG 
 !                                                                       
-!  Get logical unit number and message print flag.                      
+!  Get logical unit number and message print flag. 
+
+!  Suppress compiler warnings      
+      IF (NMES == NMES .AND. NERR == NERR) CONTINUE                    
 !                                                                       
 !***FIRST EXECUTABLE STATEMENT  XERRWD                                  
       LUNIT = IXSAV (1, 0, .FALSE.) 
