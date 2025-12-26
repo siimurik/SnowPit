@@ -85,6 +85,16 @@ contains
                         
     end function interpolate_data
     
+    ! Add this new subroutine:
+    subroutine cleanup_insulation_module()
+        implicit none
+        
+        if (allocated(T_ins_stored)) then
+            deallocate(T_ins_stored)
+        end if
+        T_ins_initialized = .false.
+    end subroutine cleanup_insulation_module
+
 end module enhanced_features_module
 
 ! ============================================================
@@ -465,7 +475,7 @@ program main_enhanced
     
     ! Control flags
     logical :: USE_ADVANCED_INSULATION, USE_REFREEZING, USE_PERCOLATION
-    logical :: USE_MULTILAYER_INSULATION, USE_CSV_DATA
+    logical :: USE_MULTILAYER_INSULATION    !, USE_CSV_DATA
     
     ! Variable declarations
     integer :: Nt, k, status, i, n_hours
@@ -537,10 +547,10 @@ program main_enhanced
     USE_REFREEZING = .TRUE.
     USE_PERCOLATION = .TRUE.
     USE_MULTILAYER_INSULATION = .TRUE.
-    USE_CSV_DATA = .TRUE.
+    !USE_CSV_DATA = .TRUE.
     
     ! Solver choice
-    SOLVER_CHOICE = 2  ! 1=RK4, 2=DOPRI5, 3=LSODA
+    SOLVER_CHOICE = 3  ! 1=RK4, 2=DOPRI5, 3=LSODA
     
     ! ============================================================
     ! Physical constants
@@ -1027,6 +1037,9 @@ program main_enhanced
     deallocate(met_data%solar)
     deallocate(met_data%rh)
 
+    ! Clean up module-level allocations
+    call cleanup_insulation_module()
+
 contains
 
     ! ============================================================
@@ -1203,11 +1216,11 @@ subroutine compute_energy_diagnostics_enhanced(t_vec, Nt, qa_hist, qsolar_hist, 
 
     SELECT CASE (SOLVER_CHOICE)
     CASE (1)
-        print *, "  Solver: RK4"
+        print *, " Solver: RK4"
     CASE (2)
-        print *, "  Solver: DOPRI5"
+        print *, " Solver: DOPRI5"
     CASE (3)
-        print *, "  Solver: LSODA"
+        print *, " Solver: LSODA"
     END SELECT
 
     print '(A, L1)', "  Advanced insulation:    ", USE_ADVANCED
@@ -1323,6 +1336,9 @@ subroutine dTdt(t, Tv, R_a2s, q_solar, q_rain, q_evap, &
 
 end subroutine dTdt
 
+! ------------------------------------------------------------
+!  OPTION 1: Runge-Kutta 4
+! ------------------------------------------------------------
 SUBROUTINE step_RK4(t, dt, T_current, R_eff, R_ins, q_solar, q_rain, &
                    q_evap, temp_vec, itemp_size, dt_data, &
                    R_nm, Cs_layer, Tg, T_new)
@@ -1489,7 +1505,7 @@ SUBROUTINE solout_dummy(NR, XOLD, X, Y, N, CON, ICOMP, ND, RPAR, IPAR, IRTRN)
 END SUBROUTINE solout_dummy
 
 ! ------------------------------------------------------------
-!  OPTION 2: LSODA (Auto stiff/non-stiff switching)
+!  OPTION 3: LSODA (Auto stiff/non-stiff switching)
 ! ------------------------------------------------------------
 SUBROUTINE integrate_LSODA(t, dt, T_current, R_ins, R_eff, q_solar, q_rain, &
                            q_evap, R_nm, Cs_layer, Tg, temp_vec, itemp_size, &
@@ -1633,165 +1649,3 @@ SUBROUTINE jac_dummy(NEQ, T, Y, ML, MU, PD, NROWPD, common_data)
     IF (NEQ < 0 .OR. ML < 0 .OR. MU < 0 .OR. NROWPD < 0) CONTINUE
     IF (T < -999.0D0 .OR. Y(1) < -999.0D0) CONTINUE
 END SUBROUTINE jac_dummy
-
-! ============================================================
-! Enhanced energy diagnostics with refreezing and runoff
-! ============================================================
-!SUBROUTINE compute_energy_diagnostics_enhanced(t_vec, Nt, qa_hist, qsolar_hist, &
-!                                              qrain_hist, qevap_hist, qground_hist, &
-!                                              T_hist, Cs_layer, E_melt, rho_i, Lf, &
-!                                              refrozen_hist, runoff_hist, n_hours, &
-!                                              USE_ADVANCED, USE_MULTILAYER, &
-!                                              USE_REFREEZE, USE_PERCOL, &
-!                                              N_ins, SOLVER_CHOICE)
-!    IMPLICIT NONE
-!    INTEGER, INTENT(IN) :: Nt, SOLVER_CHOICE, n_hours, N_ins
-!    DOUBLE PRECISION, DIMENSION(Nt), INTENT(IN) :: t_vec, qa_hist, qsolar_hist
-!    DOUBLE PRECISION, DIMENSION(Nt), INTENT(IN) :: qrain_hist, qevap_hist, qground_hist
-!    DOUBLE PRECISION, DIMENSION(Nt), INTENT(IN) :: refrozen_hist, runoff_hist
-!    DOUBLE PRECISION, DIMENSION(Nt, 3), INTENT(IN) :: T_hist
-!    DOUBLE PRECISION, INTENT(IN) :: Cs_layer, E_melt, rho_i, Lf
-!    LOGICAL, INTENT(IN) :: USE_ADVANCED, USE_MULTILAYER, USE_REFREEZE, USE_PERCOL
-!    
-!    DOUBLE PRECISION :: E_a, E_solar, E_rain, E_evap, E_g
-!    DOUBLE PRECISION :: E_total_in, E_snow_change, E_refrozen, E_balance
-!    DOUBLE PRECISION :: M_melt, M_runoff, melt_rate_avg
-!    
-!    DOUBLE PRECISION, EXTERNAL ::
-
-! ============================================================
-!  EXAMPLE: Integration into main time loop
-! ============================================================
-! This shows how to use the enhanced features in your main program
-!
-! Add to variable declarations in main program:
-!   use enhanced_features_module
-!   type(CSVData) :: met_data
-!   type(LayerProperties), dimension(3) :: snow_layers
-!   logical :: USE_CSV_DATA, USE_REFREEZING, USE_PERCOLATION, USE_MULTILAYER
-!   double precision :: theta_e, total_refrozen, runoff
-!   double precision, dimension(3) :: LWC, ice_fractions, layer_heights
-!   double precision, allocatable :: refrozen_hist(:), runoff_hist(:), LWC_hist(:,:)
-!   integer :: N_ins_layers
-!   double precision :: D_insulation, k_i_base
-!
-! Initialization (before time loop):
-!   USE_CSV_DATA = .TRUE.
-!   USE_REFREEZING = .TRUE.
-!   USE_PERCOLATION = .TRUE.
-!   USE_MULTILAYER = .TRUE.
-!   
-!   ! Initialize layer properties
-!   theta_e = 0.03D0  ! Field capacity
-!   LWC = [0.0D0, 0.0D0, 0.0D0]
-!   ice_fractions = [0.4D0, 0.4D0, 0.4D0]
-!   layer_heights = [dz_s, dz_s, dz_s]
-!   
-!   ! Multi-layer insulation parameters
-!   N_ins_layers = 20
-!   k_i_base = 0.32D0
-!   rho_dry = 100.0D0
-!   moist_cont = 50.0D0
-!   rho_wet = rho_dry + moist_cont/100.0D0*1000.0D0
-!   c_dry = 0.99D3
-!   c_wet = (1.0D0 - moist_cont/100.0D0)*c_dry + moist_cont/100.0D0*c_w
-!   D_insulation = k_i_base / (c_wet * rho_wet)
-!   
-!   ! Allocate history arrays
-!   allocate(refrozen_hist(Nt), runoff_hist(Nt), LWC_hist(Nt, 3))
-!   refrozen_hist = 0.0D0
-!   runoff_hist = 0.0D0
-!   LWC_hist = 0.0D0
-!   LWC_hist(1, :) = LWC
-!   
-!   ! Read CSV data if enabled
-!   if (USE_CSV_DATA) then
-!       call read_csv_data('DATA.csv', met_data, status)
-!       if (status /= 0) then
-!           print *, "Error reading CSV file. Using synthetic forcing."
-!           USE_CSV_DATA = .FALSE.
-!       else
-!           print *, "Loaded ", met_data%n_points, " hourly data points"
-!       end if
-!   end if
-!
-! Inside time loop (after computing T_new, before updating Tempe):
-!   
-!   ! Get forcing data
-!   if (USE_CSV_DATA) then
-!       Ta_C = interpolate_data(met_data%temp, met_data%n_points, t_mid, 3600.0D0)
-!       forc%Ta = Ta_C + 273.15D0
-!       forc%Isolar = interpolate_data(met_data%solar, met_data%n_points, t_mid, 3600.0D0)
-!       forc%Prain = interpolate_data(met_data%precip, met_data%n_points, t_mid, 3600.0D0) / 3600.0D0
-!       wind_speed = interpolate_data(met_data%wind, met_data%n_points, t_mid, 3600.0D0)
-!       RH_pct = interpolate_data(met_data%rh, met_data%n_points, t_mid, 3600.0D0)
-!       forc%RH = RH_pct / 100.0D0
-!   else
-!       ! Use synthetic forcing functions
-!       forc%Ta = Ta_fun(t_mid)
-!       forc%Isolar = Isolar_fun(t_mid)
-!       forc%Prain = Prain_fun(t_mid)
-!       forc%RH = 0.80D0
-!   end if
-!   
-!   ! Call enhanced insulation step
-!   if (USE_ADVANCED_INSULATION) then
-!       call insulation_step_enhanced(InsState, forc, InsPar, dt, USE_MULTILAYER, &
-!                                    N_ins_layers, D_insulation, T_new(1), &
-!                                    R_ins, q_solar_ins, q_rain_snow, q_evap, InsState)
-!   end if
-!   
-!   ! Refreezing in each layer
-!   total_refrozen = 0.0D0
-!   if (USE_REFREEZING) then
-!       do i = 1, 3
-!           call refreezing_layer(T_new(i), LWC(i), ice_fractions(i), layer_heights(i), &
-!                                Tfreeze, rho_i, rho_w, c_s, c_w, Lf, &
-!                                T_new(i), LWC(i), ice_fractions(i), refrozen_mass)
-!           total_refrozen = total_refrozen + refrozen_mass
-!       end do
-!   end if
-!   refrozen_hist(k) = total_refrozen
-!   
-!   ! Surface melting (add melt water to LWC)
-!   if (T_new(1) > Tfreeze) then
-!       T_new(1) = Tfreeze
-!       if (q_surf_mid > 0.0D0) then
-!           dE_melt = q_surf_mid * dt
-!           dM_melt = dE_melt / (rho_i * Lf)
-!           surface_melt_water = dM_melt  ! [m w.e.]
-!           LWC(1) = LWC(1) + surface_melt_water / layer_heights(1)
-!       else
-!           dE_melt = 0.0D0
-!           dM_melt = 0.0D0
-!       end if
-!       E_melt = E_melt + dE_melt
-!       melt_rate_hist(k) = dM_melt / dt
-!   else
-!       melt_rate_hist(k) = 0.0D0
-!   end if
-!   
-!   ! Percolation
-!   if (USE_PERCOLATION) then
-!       call percolate_water(LWC, layer_heights, theta_e, 3, rho_w, runoff)
-!       runoff_hist(k) = runoff
-!   end if
-!   
-!   ! Store LWC history
-!   LWC_hist(k+1, :) = LWC
-!
-! After time loop - Enhanced energy diagnostics:
-!   E_refrozen = sum(refrozen_hist) * Lf
-!   E_balance = E_total_in - (E_snow_change + E_melt + E_refrozen)
-!   M_runoff = sum(runoff_hist)
-!   
-!   print *, ""
-!   print '(A, ES14.6, A)', " E_refreezing    = ", E_refrozen, " J/m²"
-!   print '(A, F10.3, A)', " Total runoff    = ", M_runoff, " kg/m²"
-!   
-!   ! Cleanup
-!   if (USE_CSV_DATA) then
-!       deallocate(met_data%time, met_data%temp, met_data%wind)
-!       deallocate(met_data%precip, met_data%solar, met_data%rh)
-!   end if
-!   deallocate(refrozen_hist, runoff_hist, LWC_hist)
