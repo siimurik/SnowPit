@@ -1,5 +1,6 @@
 ! ============================================================
-!  NEW MODULE: Enhanced features for snow model
+!  gfortran -g -fcheck=all -fbacktrace -Wall snowsim.f90 dopri5.f90 YBER_ODEPACK.f90 ODEPACK_MODULES.f90 -o snowsim -lopenblas 
+!  gfortran snowsim.f90 dopri5.f90 YBER_ODEPACK.f90 ODEPACK_MODULES.f90 -o snowsim -lopenblas
 ! ============================================================
 module enhanced_features_module
     implicit none
@@ -59,32 +60,29 @@ contains
         
         n = size(data_vec)
         
-        ! 1. Calculate float index
-        idx_float = (t_query / dt_data_val) + 1.0_8
+        ! Calculate float index (0-based like Python)
+        idx_float = t_query / dt_data_val
         
-        ! 2. Calculate integer bounds
-        idx_low = int(floor(idx_float))
-        idx_high = int(ceiling(idx_float))
+        ! Calculate integer bounds (convert to 1-based Fortran indexing)
+        idx_low = int(floor(idx_float)) + 1
+        idx_high = int(ceiling(idx_float)) + 1
         
-        ! 3. CLAMPING: This is the critical safety fix
-        ! This ensures indices are strictly between 1 and n
+        ! CLAMPING: ensure indices are between 1 and n
         if (idx_low < 1) idx_low = 1
         if (idx_high < 1) idx_high = 1
         if (idx_low > n) idx_low = n
         if (idx_high > n) idx_high = n
         
-        ! 4. Handle exact matches or boundaries
+        ! Handle exact matches
         if (idx_low == idx_high) then
             interp_val = data_vec(idx_low)
             return
         end if
         
-        ! 5. Linear Interpolation
-        ! frac is the distance between the two points
-        frac = idx_float - dble(idx_low)
-        interp_val = data_vec(idx_low) * (1.0_8 - frac) + &
-                    data_vec(idx_high) * frac
-                    
+        ! Linear interpolation
+        frac = idx_float - floor(idx_float)
+        interp_val = data_vec(idx_low) * (1.0_8 - frac) + data_vec(idx_high) * frac
+                        
     end function interpolate_data
     
 end module enhanced_features_module
@@ -727,7 +725,7 @@ program main_enhanced
     
     ! Use arange function directly (no pre-allocation needed)
     ! Remove the manual 'allocate(t_vec(Nt))' line entirely
-    t_vec = arange(t0, tf + dt, dt)
+    t_vec = arange(t0, tf, dt)
     Nt = size(t_vec)
     
     print *, ""
@@ -743,11 +741,11 @@ program main_enhanced
     
     SELECT CASE (SOLVER_CHOICE)
     CASE (1)
-        print *, "  Solver: RK4"
+        print *, " Solver: RK4"
     CASE (2)
-        print *, "  Solver: DOPRI5"
+        print *, " Solver: DOPRI5"
     CASE (3)
-        print *, "  Solver: LSODA"
+        print *, " Solver: LSODA"
     END SELECT
     
     ! ============================================================
@@ -1038,25 +1036,28 @@ contains
         implicit none
         double precision, intent(in) :: start, stop, step
         double precision, allocatable :: arr(:)
-        integer :: n
+        integer :: n, m
         
+        ! Match Python's np.arange behavior: [start, stop)
+        ! Does NOT include stop
         if (abs(step) < tiny(1.0D0)) then
             n = 1
         else
-            n = floor((stop - start) / step) + 1
+            ! Python: n = ceil((stop - start) / step) but excludes endpoint
+            n = floor((stop - start) / step)
+            if (n < 0) n = 0
         end if
         
-        if (step > 0.0D0 .and. start + (n-1)*step >= stop) then
-            n = n - 1
-        else if (step < 0.0D0 .and. start + (n-1)*step <= stop) then
-            n = n - 1
+        n = max(0, n)
+        if (n == 0) then
+            allocate(arr(0))
+            return
         end if
         
-        n = max(1, n)
         allocate(arr(n))
         
-        do i = 1, n
-            arr(i) = start + (i-1)*step
+        do m = 1, n
+            arr(m) = start + (m-1)*step
         end do
     end function arange
 
@@ -1416,8 +1417,8 @@ SUBROUTINE integrate_DOPRI5(t, dt, T_current, R_ins, R_eff, q_solar, q_rain, &
     
     Y = T_current
     ITOL = 0      ! Scalar tolerances
-    RTOL = 1.0D-6 ! Tighten tolerances slightly for stability
-    ATOL = 1.0D-6
+    RTOL = 1.0D-8 ! Tighten tolerances slightly for stability
+    ATOL = 1.0D-8
     XEND = t + dt
     IOUT = 0      ! No dense output
     
@@ -1551,8 +1552,8 @@ SUBROUTINE integrate_LSODA(t, dt, T_current, R_ins, R_eff, q_solar, q_rain, &
     RWORK = 0.0D0
     common_data%ierr = 0
     ITOL = 2
-    RTOL = 1.0D-5
-    ATOL = 1.0D-4
+    RTOL = 1.0D-8
+    ATOL = 1.0D-8
     ITASK = 1
     ISTATE = 1
     IOPT = 0
