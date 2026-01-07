@@ -62,6 +62,17 @@ c_dry = 0.99e3                # dry specific heat [J/(kg*K)]
 c_wet = (1.0 - moist_cont/100.0)*c_dry + moist_cont/100.0*c_w  # wet specific heat
 D_ins = k_i_base / (c_wet * rho_wet)  # thermal diffusivity [m^2/s]
 
+# Ground boundary condition - Robin BC
+h_ground = 3.0  # Ground heat transfer coefficient [W/m²K]
+                # Typical range: 2-5 W/(m²K) for soil interface
+                # Reference: NREL/TP-550-33954 (Deru, 2003)
+                # Lower values = better insulated ground
+                # Higher values = more conductive ground/higher water table
+
+Tg_deep = 273.15 + 2.0  # Deep ground temperature [K]
+                         # This represents the undisturbed ground temperature
+                         # at sufficient depth (typically 2-3m)
+
 # Simple (constant) insulation parameters
 alpha_const   = 0.80          # solar absorptivity (from snow.py)
 eta_rain_const = 1.0          # fraction of rain heat reaching snow
@@ -404,6 +415,28 @@ def ground_flux(T3):
     """Ground -> bottom snow layer flux [W/m^2]."""
     return (Tg - T3) / R_3g
 
+def ground_flux_robin_bc(T3, Tg_deep, h_ground, k_soil=1.5, L_soil=1.0):
+    """
+    Ground flux with combined conduction and interface resistance.
+    
+    Args:
+        T3: Temperature of bottom snow layer [K]
+        Tg_deep: Deep ground temperature [K]
+        h_ground: Ground interface heat transfer coefficient [W/m²K]
+        k_soil: Soil thermal conductivity [W/mK] (typical: 0.5-2.5)
+        L_soil: Effective soil layer thickness [m] (typical: 0.5-2.0)
+    
+    Returns:
+        q_ground: Heat flux from ground to snow [W/m²]
+    """
+    # Combined resistance: R_total = R_conduction + R_interface
+    R_cond = L_soil / k_soil  # Conduction resistance through soil
+    R_interface = 1.0 / h_ground  # Interface resistance
+    R_total = R_cond + R_interface
+    
+    q_ground = (Tg_deep - T3) / R_total
+    return q_ground
+
 # ============================================================
 #  dT/dt for snow layers
 # ============================================================
@@ -428,7 +461,8 @@ def dTdt(t, Tv, stepPar, met_data, dt_data):
     dT2  = (q_21 + q_23) / Cs_layer
 
     q_32 = (T2 - T3) / R_23
-    q_3g = (Tg - T3) / R_3g
+    #q_3g = (Tg - T3) / R_3g # Fixed ground flux
+    q_3g = ground_flux_robin_bc(T3, Tg_deep, h_ground) # Robin BC ground flux
     dT3  = (q_32 + q_3g) / Cs_layer
 
     return np.array([dT1, dT2, dT3])
