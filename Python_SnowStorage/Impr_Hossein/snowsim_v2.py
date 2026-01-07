@@ -429,6 +429,9 @@ def ground_flux_robin_bc(T3, Tg_deep, h_ground, k_soil=1.5, L_soil=1.0):
     
     Returns:
         q_ground: Heat flux from ground to snow [W/m²]
+
+    Links:
+        - https://www.cableizer.com/documentation/h_tr/
     """
     # Combined resistance: R_total = R_conduction + R_interface
     R_cond = L_soil / k_soil  # Conduction resistance through soil
