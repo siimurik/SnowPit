@@ -432,6 +432,7 @@ def ground_flux_robin_bc(T3, Tg_deep, h_ground, k_soil=1.5, L_soil=1.0):
 
     Links:
         - https://www.cableizer.com/documentation/h_tr/
+        - https://docs.nrel.gov/docs/fy03osti/33954.pdf
     """
     # Combined resistance: R_total = R_conduction + R_interface
     R_cond = L_soil / k_soil  # Conduction resistance through soil
