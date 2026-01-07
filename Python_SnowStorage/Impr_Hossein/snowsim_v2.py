@@ -117,9 +117,6 @@ theta_e = 0.03  # Irreducible water content
 ice_fractions = np.array([0.4, 0.4, 0.4])
 heights = np.array([dz_s, dz_s, dz_s])
 
-# ---------- Insulation state ----------
-T_ins_profile = None  # Initialize insulation temperature profile
-
 # ============================================================
 #  CSV Data Loading Functions
 # ============================================================
@@ -568,7 +565,10 @@ def insulation_step(state_in, forc, p, dt):
 #  Main simulation
 # ============================================================
 def main():
-    global T, LWC, ice_fractions, InsState
+    global T, LWC, ice_fractions, InsState, T_ins_profile
+
+    # Reset insulation profile for clean start
+    T_ins_profile = None
     
     print("="*60)
     print("Enhanced Snow Storage RC Model with Real Data")
@@ -708,7 +708,9 @@ def main():
         T1_mid   = T[0]
         q_a_mid  = (Ta_K - T1_mid) / R_a2s
         q_surf_mid = q_a_mid + q_solar_ins + q_rain_snow + q_evap
-        q_ground_mid = ground_flux(T[2])
+        #q_ground_mid = ground_flux(T[2])    # Dirichlet BC ground flux
+        q_ground_mid = ground_flux_robin_bc(T[2], Tg_deep, h_ground) # Robin BC ground flux
+
         
         # Refreezing
         total_refrozen = 0.0
