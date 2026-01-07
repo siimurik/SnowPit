@@ -20,6 +20,7 @@ from datetime import datetime
 #     Robin BCs at both boundaries. Outer boundary is dynamic 
 #     based on wind and environment. Inner boundary is static 
 #     based on snow contact.
+#   * Bottom ground flux now uses Robin BC with ground HTC.
 # ============================================================
 
 USE_ADVANCED_INSULATION = True
