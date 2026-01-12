@@ -111,7 +111,7 @@ T = np.array([T1_init, T2_init, T3_init], dtype=float)
 
 # ---------- Layer properties for refreezing/percolation ----------
 LWC = np.array([0.0, 0.0, 0.0], dtype=float)
-theta_e = 0.03  # Irreducible water content
+theta_e = 0.04  # Irreducible water content
 
 # Ice fractions (assuming constant for now)
 ice_fractions = np.array([0.4, 0.4, 0.4])
@@ -883,9 +883,9 @@ def main():
     # Heat fluxes
     ax6 = plt.subplot(4, 2, 6)
     ax6.plot(days, qsolar_hist, label='Solar', linewidth=1, alpha=0.7)
-    ax6.plot(days, qa_hist, label='Air convection', linewidth=1, alpha=0.7)
     ax6.plot(days, qrain_hist, label='Rain', linewidth=1, alpha=0.7)
     ax6.plot(days, qevap_hist, label='Evaporation', linewidth=1, alpha=0.7)
+    ax6.plot(days, qa_hist, label='Air convection', linewidth=1, alpha=0.7)
     ax6.set_ylabel('Heat flux [W/m²]')
     ax6.set_xlabel('Time [days]')
     ax6.legend(loc='best', fontsize=8)
