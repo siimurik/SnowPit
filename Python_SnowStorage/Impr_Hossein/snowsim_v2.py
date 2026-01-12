@@ -44,17 +44,17 @@ Ns   = 3                      # number of snow layers
 dz_s = Hs / Ns                # thickness per snow layer [m]
 
 k_snow = 0.25                 # snow conductivity [W/mK]
-Hi     = 0.10                 # insulation thickness [m] (matching 0.1m from snow.py)
+Hi     = 0.20                 # insulation thickness [m]
 
 # Multi-layer insulation setup
 if USE_MULTILAYER_INSULATION:
-    N_ins = 20                # number of insulation layers (from snow.py)
-    dz_ins = Hi / N_ins       # thickness per insulation layer [m]
+    N_ins = 20                # number of insulation layers
+    dz_ins = Hi / N_ins * 0.1 # thickness per insulation layer [m]
 else:
     N_ins = 1
     dz_ins = Hi
 
-# Insulation material properties (from snow.py)
+# Insulation material properties
 k_i_base = 0.32               # base thermal conductivity [W/mK]
 rho_dry = 100.0               # dry density [kg/m^3]
 moist_cont = 50.0             # moisture content [%]
@@ -75,7 +75,7 @@ Tg_deep = 273.15 + 2.0  # Deep ground temperature [K]
                          # at sufficient depth (typically 2-3m)
 
 # Simple (constant) insulation parameters
-alpha_const   = 0.80          # solar absorptivity (from snow.py)
+alpha_const   = 0.80          # solar absorptivity
 eta_rain_const = 1.0          # fraction of rain heat reaching snow
 
 # Ground insulation
@@ -285,7 +285,7 @@ def compute_insulation_resistance_multilayer_core(T_env, h_out, T_snow, h_in, k_
     c = np.zeros(N_nodes)
     d = np.zeros(N_nodes)
     
-    # Time-stepping loop (matching snow.py approach)
+    # Time-stepping loop
     for _ in range(n_substeps):
         # Fourier number for this substep
         dFo = D_ins * dt_substep / dx**2
@@ -473,7 +473,6 @@ def dTdt(t, Tv, stepPar, met_data, dt_data):
 def compute_h_out(wind_speed):
     """
     Calculate external heat transfer coefficient based on wind speed.
-    Matches the correlation from snow.py.
     
     Args:
         wind_speed: Wind speed [m/s]
@@ -484,7 +483,7 @@ def compute_h_out(wind_speed):
     if wind_speed <= 5.0:
         return 6.0 + 4.0 * wind_speed
     else:
-        return 7.41 * (wind_speed ** 0.78)
+        return 7.41 * (wind_speed**0.78)
 
 # ============================================================
 #  Insulation step (advanced model) - UPDATED
