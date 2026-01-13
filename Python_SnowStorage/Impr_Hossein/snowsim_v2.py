@@ -64,15 +64,15 @@ c_wet = (1.0 - moist_cont/100.0)*c_dry + moist_cont/100.0*c_w  # wet specific he
 D_ins = k_i_base / (c_wet * rho_wet)  # thermal diffusivity [m^2/s]
 
 # Ground boundary condition - Robin BC
-h_ground = 3.0  # Ground heat transfer coefficient [W/m²K]
+h_ground = 4.0  # Ground heat transfer coefficient [W/m²K]
                 # Typical range: 2-5 W/(m²K) for soil interface
                 # Reference: NREL/TP-550-33954 (Deru, 2003)
                 # Lower values = better insulated ground
                 # Higher values = more conductive ground/higher water table
 
-Tg_deep = 273.15 + 2.0  # Deep ground temperature [K]
-                         # This represents the undisturbed ground temperature
-                         # at sufficient depth (typically 2-3m)
+Tg_deep = 273.15 + 3.0  # Deep ground temperature [K]
+                        # This represents the undisturbed ground temperature
+                        # at sufficient depth (typically 2-3m)
 
 # Simple (constant) insulation parameters
 alpha_const   = 0.80          # solar absorptivity
@@ -100,8 +100,8 @@ R_g_ins = Hg_ins / kg_ins
 R_3g    = R_layer + R_g_ins
 
 # ---------- Ground & snow capacity ----------
-Tg        = 273.15 + 2.0
-Cs_layer  = rho_s * c_s * dz_s   # [J/(m^2 K)] per snow layer
+Tg        = 273.15 + 2.0        # Currently unused
+Cs_layer  = rho_s * c_s * dz_s  # [J/(m^2 K)] per snow layer
 
 # ---------- Initial snow temperatures ----------
 T1_init = 273.15 - 2.0
