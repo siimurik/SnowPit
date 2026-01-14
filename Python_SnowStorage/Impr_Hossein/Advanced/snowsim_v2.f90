@@ -1,6 +1,6 @@
 ! ============================================================
-!  gfortran -g -fcheck=all -fbacktrace -Wall snowsim.f90 dopri5.f90 YBER_ODEPACK.f90 ODEPACK_MODULES.f90 -o snowsim -lopenblas 
-!  gfortran snowsim.f90 dopri5.f90 YBER_ODEPACK.f90 ODEPACK_MODULES.f90 -o snowsim -lopenblas
+!  gfortran -g -fcheck=all -fbacktrace -Wall snowsim_v2.f90 dopri5.f90 YBER_ODEPACK.f90 ODEPACK_MODULES.f90 -o snowsim_v2 -lopenblas 
+!  gfortran snowsim_v2.f90 dopri5.f90 YBER_ODEPACK.f90 ODEPACK_MODULES.f90 -o snowsim_v2 -lopenblas -Wl,-z,noexecstack
 ! ============================================================
 module enhanced_features_module
     implicit none
@@ -959,9 +959,9 @@ program main_enhanced
         end if
 
         ! NEW: Print R_ins
-        if (k == 1 .or. mod(k, 100) == 0) then
-            print *, "STEP:", k, " R_ins:", R_ins
-        end if
+        ! if (k == 1 .or. mod(k, 100) == 0) then
+        !     print *, "STEP:", k, " R_ins:", R_ins
+        !end if
                 
         R_a2s = R_eff + R_ins
         
