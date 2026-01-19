@@ -431,8 +431,16 @@ def main():
     #printVec(air_temp_vec, column_name="Air temperature (Celsius)")
 
     # Get air velocity data and assign it to a vector
-    air_vel_vec_raw = [row[15] for row in rdata]
-    air_vel_vec = convert_to_type(air_vel_vec_raw, dtype=float)
+    air_vel_vec_raw_kmh = [row[14] for row in rdata]
+    air_vel_vec_kmh = convert_to_type(air_vel_vec_raw_kmh, dtype=float)
+    printVec(air_vel_vec_kmh, column_name="Air velocity (km/h)")
+
+    # Convert air velocity from km/h to m/s
+    air_vel_vec = [vel_kmh / 3.6 for vel_kmh in air_vel_vec_kmh]
+    printVec(air_vel_vec, column_name="Air velocity (m/s)")
+
+    #air_vel_vec_raw = [row[15] for row in rdata]
+    #air_vel_vec = convert_to_type(air_vel_vec_raw, dtype=float)
     #printVec(air_vel_vec, column_name="Air velocity (m/s)")
 
     # Extract the amount of precipitation column from the data
@@ -637,7 +645,7 @@ def main():
     printVec(RH_vec, column_name="Relative Humidity (m/h)")
 
     #------------------------------------------------------------------------
-    column_names = ['Temp_C', 'Air_Vel_m/s', 'Prec_m/h', 'Glo_Sol_Ir_W/m2', 'RH_%']
+    column_names = ['Temp_C', 'Air_Vel_m/s_10m', 'Prec_m/h', 'Glo_Sol_Ir_W/m2', 'RH_%']
 
     export_OG = [[t, v, p, ir, rh] for t, v, p, ir, rh 
             in zip(air_temp_vec, air_vel_vec, prec_vec, glob_solir_vec, RH_vec)] # column format 
