@@ -420,8 +420,8 @@ def main():
     # Display the sliced data
     #for row in data[period_start_in:period_end_in]:
     #    print(row[7])
-
-    #printVec(time_column)
+    filt_Time = time_column[period_start_in:period_end_in+1]
+    printVec(filt_Time, column_name="Filtered Time Column")
     rdata = data[period_start_in:period_end_in+1] # rdata - "ranged data"
     #printAny(rdata, column_name="All data")
 
@@ -645,10 +645,10 @@ def main():
     printVec(RH_vec, column_name="Relative Humidity (m/h)")
 
     #------------------------------------------------------------------------
-    column_names = ['Temp_C', 'Air_Vel_m/s_10m', 'Prec_m/h', 'Glo_Sol_Ir_W/m2', 'RH_%']
+    column_names = ['Time', 'Temp_C', 'Air_Vel_m/s_10m', 'Prec_m/h', 'Glo_Sol_Ir_W/m2', 'RH_%']
 
-    export_OG = [[t, v, p, ir, rh] for t, v, p, ir, rh 
-            in zip(air_temp_vec, air_vel_vec, prec_vec, glob_solir_vec, RH_vec)] # column format 
+    export_OG = [[time, t, v, p, ir, rh] for time, t, v, p, ir, rh 
+            in zip(filt_Time, air_temp_vec, air_vel_vec, prec_vec, glob_solir_vec, RH_vec)] # column format 
 
     # Export with tab separation (good for columnar data)
     export_large_matrix(export_OG, "DATA.csv", value_delimiter=",", column_names=column_names)
