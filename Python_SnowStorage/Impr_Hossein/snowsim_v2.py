@@ -137,7 +137,7 @@ def read_csv_data(filename):
             try:
                 data['time'].append(row['Time'])
                 data['temp'].append(float(row['Temp_C']))
-                data['wind'].append(float(row['Air_Vel_m/s']))
+                data['wind'].append(float(row['Air_Vel_m/s_10m']))
                 data['precip'].append(float(row['Prec_m/h']))
                 data['solar'].append(float(row['Glo_Sol_Ir_W/m2']))
                 data['rh'].append(float(row['RH_%']))
