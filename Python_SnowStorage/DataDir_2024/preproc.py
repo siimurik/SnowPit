@@ -65,9 +65,9 @@ print(f"Weather data after cleaning: {len(weather_filtered)} rows")
 print(f"Soil data after cleaning: {len(soil_filtered)} rows")
 
 # Filter date range: 2024-04-01 to 2024-08-01
-print("\nFiltering date range (2024-04-01 to 2024-08-01)...")
+print("\nFiltering date range (2024-04-01 to 2024-08-31)...")
 start_date = datetime(2024, 4, 1)
-end_date = datetime(2024, 8, 1, 23, 59, 59)
+end_date = datetime(2024, 8, 31, 23, 59, 59)
 
 weather_filtered = weather_filtered[
     (weather_filtered['DateTime'] >= start_date) & 
