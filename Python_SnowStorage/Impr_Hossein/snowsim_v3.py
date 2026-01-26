@@ -773,6 +773,7 @@ def main():
     Isolar_hist[-1] = interpolate_data(met_data['solar'], t_vec[-1], dt_data)
     Prain_hist[-1] = interpolate_data(met_data['precip'], t_vec[-1], dt_data) / 3600.0
     Tsoil_hist[-1] = interpolate_data(met_data['soil_temp'], t_vec[-1], dt_data) + 273.15  # NEW
+    qground_hist[-1] = ground_flux_robin_bc(T[-1], Tsoil_hist[-1], h_ground)
     
     if USE_ADVANCED_INSULATION:
         W_hist[-1]      = InsState["W"]
