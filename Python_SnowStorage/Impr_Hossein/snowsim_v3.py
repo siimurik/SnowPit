@@ -39,11 +39,11 @@ c_w     = 4180.0              # Water specific heat [J/kg K]
 Tfreeze = 273.15              # 0°C [K]
 
 # ---------- Snow & insulation ----------
-Hs   = 2.0                    # total snow thickness [m]
+Hs   = 4.5                    # total snow thickness [m]
 Ns   = 3                      # number of snow layers
 dz_s = Hs / Ns                # thickness per snow layer [m]
 
-k_snow = 0.25                 # snow conductivity [W/mK]
+k_snow = 0.50                 # snow conductivity [W/(mK)]
 Hi     = 0.20                 # insulation thickness [m]
 
 # Multi-layer insulation setup
@@ -55,16 +55,16 @@ else:
     dz_ins = Hi
 
 # Insulation material properties
-k_i_base = 0.32               # base thermal conductivity [W/mK]
+k_i_base = 0.32               # base thermal conductivity [W/(mK)]
 rho_dry = 100.0               # dry density [kg/m^3]
-moist_cont = 50.0             # moisture content [%]
+moist_cont = 60.0             # moisture content [%]
 rho_wet = rho_dry + moist_cont/100.0*1000  # wet density [kg/m^3]
 c_dry = 0.99e3                # dry specific heat [J/(kg*K)]
 c_wet = (1.0 - moist_cont/100.0)*c_dry + moist_cont/100.0*c_w  # wet specific heat
 D_ins = k_i_base / (c_wet * rho_wet)  # thermal diffusivity [m^2/s]
 
 # Ground boundary condition - Robin BC
-h_ground = 4.0  # Ground heat transfer coefficient [W/m²K]
+h_ground = 5.0  # Ground heat transfer coefficient [W/m²K]
                 # Typical range: 2-5 W/(m²K) for soil interface
                 # Reference: NREL/TP-550-33954 (Deru, 2003)
                 # Lower values = better insulated ground
@@ -78,7 +78,7 @@ eta_rain_const = 1.0          # fraction of rain heat reaching snow
 
 # Ground insulation
 Hg_ins = 0.3                  # [m]
-kg_ins = 0.04                 # [W/mK]
+kg_ins = 0.04                 # [W/(mK)]
 
 # ---------- Surface HTC (air-side, conv + LW) ----------
 h_conv  = 8.0                 # convective coefficient [W/m^2K]
@@ -109,7 +109,7 @@ T = np.array([T1_init, T2_init, T3_init], dtype=float)
 
 # ---------- Layer properties for refreezing/percolation ----------
 LWC = np.array([0.0, 0.0, 0.0], dtype=float)
-theta_e = 0.04  # Irreducible water content
+theta_e = 0.035  # Irreducible water content
 
 # Ice fractions (assuming constant for now)
 ice_fractions = np.array([0.4, 0.4, 0.4])
@@ -267,7 +267,7 @@ def compute_insulation_resistance_multilayer_core(T_env, h_out, T_snow, h_in, k_
         h_out: External Heat Transfer Coefficient [W/m²K] (from wind speed)
         T_snow: Temperature of the snow directly below insulation [K]
         h_in: Contact conductance/HTC between insulation and snow [W/m²K]
-        k_eff: Effective thermal conductivity of insulation [W/mK]
+        k_eff: Effective thermal conductivity of insulation [W/(mK)]
         dt_main: Main simulation time step [s] (required, typically 600s)
         T_n_init: Initial temperature profile [K] (N_ins + 1 nodes)
         dt_substep: Sub-time step for the thermal solver [s] (default 10s)
@@ -423,7 +423,7 @@ def ground_flux_robin_bc(T3, T_soil_K, h_ground, k_soil=1.5, L_soil=1.0):
         T3: Temperature of bottom snow layer [K]
         T_soil_K: Soil temperature from CSV data [K]
         h_ground: Ground interface heat transfer coefficient [W/m²K]
-        k_soil: Soil thermal conductivity [W/mK] (typical: 0.5-2.5)
+        k_soil: Soil thermal conductivity [W/(mK)] (typical: 0.5-2.5)
         L_soil: Effective soil layer thickness [m] (typical: 0.5-2.0)
     
     Returns:
@@ -921,7 +921,7 @@ def main():
         ax7_twin = ax7.twinx()
         ln1 = ax7.plot(days, k_eff_hist, 'b-', label='k_eff', linewidth=1.5)
         ln2 = ax7_twin.plot(days, alpha_hist, 'r-', label='α_eff', linewidth=1.5)
-        ax7.set_ylabel('k_eff [W/mK]', color='b')
+        ax7.set_ylabel('k_eff [W/(mK)]', color='b')
         ax7_twin.set_ylabel('α_eff [-]', color='r')
         ax7.tick_params(axis='y', labelcolor='b')
         ax7_twin.tick_params(axis='y', labelcolor='r')
