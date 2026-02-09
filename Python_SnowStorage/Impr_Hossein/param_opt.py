@@ -107,6 +107,122 @@ params = [Hi, Hg_ins, kg_ins, alpha_const]
 minimize total_cost(capital + operational)  # Economically optimal
 ```
 Use case: "I'm planning a new pile, what's the best design?"
+
+============================================================
+Energy Balance Diagnostics
+============================================================
+
+Configuration:
+  Advanced insulation:    True
+  Multi-layer insulation: True (20 layers)
+  Refreezing:             True
+  Percolation:            True
+
+Energy fluxes [MJ/m²]:
+  Air convection:        606.973
+  Solar radiation:       451.944
+  Rain heat:               1.595
+  Evaporation:            -4.373
+  Ground heat:            38.534
+  ─────────────────────────────
+  Total input:          1094.673
+
+Energy storage/losses [MJ/m²]:
+  Snow temperature:       31.385
+  Melting:              1056.674
+  Refreezing:              6.614
+  ─────────────────────────────
+  Energy residual:        -0.000
+
+Mass balance:
+  Total melt:              3.450 m w.e.
+  Total runoff:         3182.512 kg/m²
+  Melt rate (avg):        22.549 mm/day
+
+============================================================
+Optimization iteration 425
+  k_snow   = 0.732 W/mK
+  h_ground = 3.535 W/m²K
+  moist_cont = 36.1 %
+  theta_e  = 0.0551
+============================================================
+Enhanced Snow Storage RC Model with Real Data
+============================================================
+
+Loading meteorological data from DATA_2024.csv...
+Loaded 3672 hourly data points
+Period: 2024-04-01T00:00 to 2024-08-31T23:00
+Soil temperature data available: True
+  Soil temp range: 5.1 to 11.3 °C
+
+Simulation settings:
+  Duration: 3672 hours (153.0 days)
+  Time step: 600.0 s (10.0 min)
+  Total steps: 22032
+  Multi-layer insulation: True (20 layers)
+  Refreezing: True
+  Percolation: True
+
+Running simulation...
+  Progress: 25%
+  Progress: 50%
+  Progress: 75%
+  Progress: 100%
+
+Simulation complete!
+
+============================================================
+Energy Balance Diagnostics
+============================================================
+
+Configuration:
+  Advanced insulation:    True
+  Multi-layer insulation: True (20 layers)
+  Refreezing:             True
+  Percolation:            True
+
+Energy fluxes [MJ/m²]:
+  Air convection:        606.973
+  Solar radiation:       451.944
+  Rain heat:               1.595
+  Evaporation:            -4.373
+  Ground heat:            38.534
+  ─────────────────────────────
+  Total input:          1094.673
+
+Energy storage/losses [MJ/m²]:
+  Snow temperature:       31.385
+  Melting:              1056.674
+  Refreezing:              6.614
+  ─────────────────────────────
+  Energy residual:         0.000
+
+Mass balance:
+  Total melt:              3.450 m w.e.
+  Total runoff:         3182.512 kg/m²
+  Melt rate (avg):        22.549 mm/day
+
+============================================================
+OPTIMIZATION COMPLETE!
+============================================================
+
+Optimal parameters:
+  k_snow (snow conductivity): 0.732 W/(mK)
+  h_ground (soil conductivity): 3.535 m
+  moist_cont (Moisture content): 36.1 %
+  theta_e (irreducible water content): 0.0551
+
+Optimal energy residual: 0.000 MJ/m²
+
+Final residual: 0.000 MJ/m²
+Number of iterations: 7
+Optimization success: False
+
+Improvement: 100.0% reduction in energy residual
+
+real    15m39.264s
+user    15m36.353s
+sys     0m2.780s
 """
 
 iteration_count = [0]  # Use list to make it mutable in nested function
@@ -116,7 +232,7 @@ def objective_function(params):
     iteration_count[0] += 1
     #Hs, k_snow, h_ground, theta_e = params
     #k_snow, h_ground, k_i_base, moist_cont, Hg_ins, kg_ins, alpha_const, theta_e = params
-    k_snow, h_ground, theta_e, moist_cont = params
+    k_snow, h_ground, moist_cont, theta_e  = params
 
     print(f"\n{'='*60}")
     print(f"Optimization iteration {iteration_count[0]}")
@@ -155,7 +271,7 @@ def objective_function(params):
         Ns   = 3                      # number of snow layers
         dz_s = Hs / Ns                # thickness per snow layer [m]
 
-        k_snow = 0.50                 # snow conductivity [W/(mK)]
+        # k_snow is passed in as optimized parameter - DON'T override!
         Hi     = 0.20                 # insulation thickness [m]
 
         # Multi-layer insulation setup
@@ -176,7 +292,7 @@ def objective_function(params):
         D_ins = k_i_base / (c_wet * rho_wet)  # thermal diffusivity [m^2/s]
 
         # Ground boundary condition - Robin BC
-        h_ground = 5.0  # Ground heat transfer coefficient [W/m²K]
+        # h_ground is passed in as optimized parameter - DON'T override!
                         # Typical range: 2-5 W/(m²K) for soil interface
                         # Reference: NREL/TP-550-33954 (Deru, 2003)
                         # Lower values = better insulated ground
@@ -956,29 +1072,32 @@ bounds = [
     (0.01, 8.0),  # h_ground: ground heat transfer coefficient [W/m²K]
 #    (0.1, 0.4),   # Hi: insulation thickness [m]
 #    (0.05, 0.5),  # k_i_base: base thermal conductivity [W/(mK)]
-    (0.0, 90.0),  # moist_cont: moisture content [%]
+    (0.0, 150.0),  # moist_cont: moisture content [%]
 #    (0.0, 0.5),   # Hg_ins: ground insulation [m]
 #    (0.01, 1.0),  # kg_ins: ground insulation conductivity [W/(mK)]
 #    (0.5, 0.95),  # alpha: surface coating (0.2=white, 0.95=dark)
     (0.01, 0.06)  # theta_e: irreducible water content (0.01-0.3)
 ]
 
-# Initial guess 
-x0 =    [  
-        0.3,    # k_snow 
-        0.6,    # h_ground
-   #     0.05,   # k_i_base
-        0.79,   # moist_cont
-    #    0.1,    # Hg_ins
-    #    0.1,    # kg_ins
-    #    0.8,    # albedo
-        0.04]   # theta_e
+# Initial guess - Use physically reasonable middle values
+x0 = [  
+        0.30,    # k_snow - typical aged snow
+        0.60,    # h_ground - mid-range soil HTC
+        60.0,    # moist_cont - moderate moisture
+        0.035   # theta_e - typical field capacity
+    ]
 # Optimize
 result = minimize(  
         objective_function, 
         x0, 
         bounds=bounds, 
-        method='L-BFGS-B' # Gradient-based optimization with bounds
+        method='L-BFGS-B',  # Gradient-based optimization with bounds
+        options={
+            'maxiter': 50,      # Maximum iterations
+            'ftol': 1e-6,       # Function tolerance
+            'gtol': 1e-5,       # Gradient tolerance
+            'disp': True        # Display convergence messages
+        }
     )
 print(f"\n{'='*60}")
 print("OPTIMIZATION COMPLETE!")
