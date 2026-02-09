@@ -21,6 +21,92 @@ Number of iterations: 7
 Optimization success: False
 
 Improvement: 100.0% reduction in energy residual
+
+============================================================
+OPTIMIZATION COMPLETE!
+============================================================
+
+Optimal parameters:
+  k_snow (snow conductivity): 0.300 W/(mK)
+  h_ground (soil conductivity): 0.600 m
+  k_i_base (base conductivity): 0.050 W/(mK)
+  Moisture content: 80.0 %
+  Hg_ins (ground insulation): 0.100 m
+  kg_ins (ground insulation conductivity): 0.100 W/(mK)
+  alpha_const (surface albedo): 0.800
+  theta_e (irreducible water content): 0.0500
+
+Optimal energy residual: 4.892 MJ/m²
+
+Final residual: 4.892 MJ/m²
+Number of iterations: 1
+Optimization success: True
+
+Improvement: 5.1% reduction in energy residual
+
+real	0m56,613s
+user	0m57,806s
+sys	0m0,224s
+============================================================
+Goal A: Calibration (make model match measurements)
+Fix design choices, optimize only measured properties:
+
+```python
+# FIXED (your design choices)
+Hi = 0.20
+Hg_ins = 0.30
+alpha_const = 0.80
+k_i_base = 0.32
+kg_ins = 0.04
+
+# OPTIMIZE (calibrate to field data)
+params = [k_snow, h_ground, theta_e, moist_cont]
+
+# OBJECTIVE
+minimize abs(E_residual)  # Get model to match reality
+```
+Use case: "I built a pile, measured some temps, want to validate my model"
+
+============================================================
+OPTIMIZATION COMPLETE!
+============================================================
+
+Optimal parameters:
+  k_snow (snow conductivity): 0.300 W/(mK)
+  h_ground (soil conductivity): 0.600 m
+  moist_cont (Moisture content): 0.8 %
+  theta_e (irreducible water content): 0.0400
+
+Optimal energy residual: 0.890 MJ/m²
+
+Final residual: 0.890 MJ/m²
+Number of iterations: 1
+Optimization success: True
+
+Improvement: 82.7% reduction in energy residual
+
+real	3m40,847s
+user	3m41,962s
+sys	0m0,337s
+
+============================================================
+Goal B: Design Optimization (find best system to build)
+Fix measured properties, optimize design choices:
+
+```python
+# FIXED (measured/known properties from your site)
+Hs = 4.5  # Based on accumulation capacity
+k_snow = 0.50  # Typical aged snow (or measure yours)
+h_ground = 5.0  # Measured from your soil
+theta_e = 0.035  # Typical for snow
+
+# OPTIMIZE (what you can choose)
+params = [Hi, Hg_ins, kg_ins, alpha_const]
+
+# OBJECTIVE
+minimize total_cost(capital + operational)  # Economically optimal
+```
+Use case: "I'm planning a new pile, what's the best design?"
 """
 
 iteration_count = [0]  # Use list to make it mutable in nested function
@@ -29,21 +115,23 @@ def objective_function(params):
     """Run simulation with given parameters and return |energy residual|"""
     iteration_count[0] += 1
     #Hs, k_snow, h_ground, theta_e = params
-    k_snow, Hi, k_i_base, moist_cont, Hg_ins, kg_ins, alpha_const, theta_e = params
+    #k_snow, h_ground, k_i_base, moist_cont, Hg_ins, kg_ins, alpha_const, theta_e = params
+    k_snow, h_ground, theta_e, moist_cont = params
 
     print(f"\n{'='*60}")
     print(f"Optimization iteration {iteration_count[0]}")
     print(f"  k_snow   = {k_snow:.3f} W/mK")
-    print(f"  Hi       = {Hi:.3f} m")
-    print(f"  k_i_base = {k_i_base:.3f} W/mK")
+    print(f"  h_ground = {h_ground:.3f} W/m²K")
+#    print(f"  Hi       = {Hi:.3f} m")
+    #print(f"  k_i_base = {k_i_base:.3f} W/mK")
     print(f"  moist_cont = {moist_cont:.1f} %")
-    print(f"  Hg_ins   = {Hg_ins:.3f} m")
-    print(f"  kg_ins   = {kg_ins:.3f} W/m²K")
-    print(f"  alpha_const = {alpha_const:.3f}")
+    #print(f"  Hg_ins   = {Hg_ins:.3f} m")
+    #print(f"  kg_ins   = {kg_ins:.3f} W/m²K")
+    #print(f"  alpha_const = {alpha_const:.3f}")
     print(f"  theta_e  = {theta_e:.4f}")
     
     # Sanity checks
-    if k_snow <= 0 or Hi <= 0 or k_i_base <= 0 or Hg_ins <= 0 or kg_ins <= 0 or theta_e <= 0:
+    if k_snow <= 0 or h_ground <= 0 or moist_cont <= 0 or theta_e <= 0:
         return 1e10  # Huge penalty for unphysical values
     
     try:
@@ -68,7 +156,7 @@ def objective_function(params):
         dz_s = Hs / Ns                # thickness per snow layer [m]
 
         k_snow = 0.50                 # snow conductivity [W/(mK)]
-        #Hi     = 0.20                 # insulation thickness [m]
+        Hi     = 0.20                 # insulation thickness [m]
 
         # Multi-layer insulation setup
         if USE_MULTILAYER_INSULATION:
@@ -79,7 +167,7 @@ def objective_function(params):
             dz_ins = Hi
 
         # Insulation material properties
-        #k_i_base = 0.32               # base thermal conductivity [W/(mK)]
+        k_i_base = 0.32               # base thermal conductivity [W/(mK)]
         rho_dry = 100.0               # dry density [kg/m^3]
         #moist_cont = 60.0             # moisture content [%]
         rho_wet = rho_dry + moist_cont/100.0*1000  # wet density [kg/m^3]
@@ -97,12 +185,12 @@ def objective_function(params):
         # REMOVED: Tg_deep = 273.15 + 3.0  # Now using data from CSV
 
         # Simple (constant) insulation parameters
-        #alpha_const   = 0.80          # solar absorptivity
+        alpha_const   = 0.80          # solar absorptivity
         eta_rain_const = 1.0          # fraction of rain heat reaching snow
 
         # Ground insulation
-        #Hg_ins = 0.3                  # [m]
-        #kg_ins = 0.04                 # [W/(mK)]
+        Hg_ins = 0.3                  # [m]
+        kg_ins = 0.04                 # [W/(mK)]
 
         # ---------- Surface HTC (air-side, conv + LW) ----------
         h_conv  = 8.0                 # convective coefficient [W/m^2K]
@@ -122,7 +210,7 @@ def objective_function(params):
         R_3g    = R_layer + R_g_ins
 
         # ---------- Ground & snow capacity ----------
-        Tg        = 273.15 + 2.0        # Currently unused
+        #Tg        = 273.15 + 2.0        # Currently unused
         Cs_layer  = rho_s * c_s * dz_s  # [J/(m^2 K)] per snow layer
 
         # ---------- Initial snow temperatures ----------
@@ -865,31 +953,45 @@ def objective_function(params):
 # Hi, k_i_base, moist_cont, Hg_ins, kg_ins, alpha_const, theta_e = params
 bounds = [
     (0.2, 0.8),   # k_snow: snow thermal conductivity [W/(mK)]
-    (0.1, 0.4),   # Hi: insulation thickness [m]
-    (0.05, 0.5),  # k_i_base: base thermal conductivity [W/(mK)]
-    (0.0, 80.0),  # moist_cont: moisture content [%]
-    (0.0, 0.5),   # Hg_ins: ground insulation [m]
-    (0.01, 1.0),  # kg_ins: ground insulation conductivity [W/(mK)]
-    (0.5, 0.95),  # alpha: surface coating (0.2=white, 0.95=dark)
-    (0.01, 0.08)  # theta_e: irreducible water content (0.01-0.3)
+    (0.01, 8.0),  # h_ground: ground heat transfer coefficient [W/m²K]
+#    (0.1, 0.4),   # Hi: insulation thickness [m]
+#    (0.05, 0.5),  # k_i_base: base thermal conductivity [W/(mK)]
+    (0.0, 90.0),  # moist_cont: moisture content [%]
+#    (0.0, 0.5),   # Hg_ins: ground insulation [m]
+#    (0.01, 1.0),  # kg_ins: ground insulation conductivity [W/(mK)]
+#    (0.5, 0.95),  # alpha: surface coating (0.2=white, 0.95=dark)
+    (0.01, 0.06)  # theta_e: irreducible water content (0.01-0.3)
 ]
 
 # Initial guess 
-x0 = [0.3, 0.2, 0.1, 10.0, 0.1, 0.1, 0.8, 0.02] # k_snow, Hi, k_i_base, moist_cont, Hg_ins, kg_ins, alpha_const, theta_e
+x0 =    [  
+        0.3,    # k_snow 
+        0.6,    # h_ground
+   #     0.05,   # k_i_base
+        0.79,   # moist_cont
+    #    0.1,    # Hg_ins
+    #    0.1,    # kg_ins
+    #    0.8,    # albedo
+        0.04]   # theta_e
 # Optimize
-result = minimize(objective_function, x0, bounds=bounds, method='L-BFGS-B')
+result = minimize(  
+        objective_function, 
+        x0, 
+        bounds=bounds, 
+        method='L-BFGS-B' # Gradient-based optimization with bounds
+    )
 print(f"\n{'='*60}")
 print("OPTIMIZATION COMPLETE!")
 print(f"{'='*60}")
 print(f"\nOptimal parameters:")
 print(f"  k_snow (snow conductivity): {result.x[0]:.3f} W/(mK)")
-print(f"  Hi (insulation thickness): {result.x[1]:.3f} m")
-print(f"  k_i_base (base conductivity): {result.x[2]:.3f} W/(mK)")
-print(f"  Moisture content: {result.x[3]:.1f} %")
-print(f"  Hg_ins (ground insulation): {result.x[4]:.3f} m")
-print(f"  kg_ins (ground insulation conductivity): {result.x[5]:.3f} W/(mK)")
-print(f"  alpha_const (surface albedo): {result.x[6]:.3f}")
-print(f"  theta_e (irreducible water content): {result.x[7]:.4f}")
+print(f"  h_ground (soil conductivity): {result.x[1]:.3f} m")
+#print(f"  k_i_base (base conductivity): {result.x[2]:.3f} W/(mK)")
+print(f"  moist_cont (Moisture content): {result.x[2]:.1f} %")
+#print(f"  Hg_ins (ground insulation): {result.x[3]:.3f} m")
+#print(f"  kg_ins (ground insulation conductivity): {result.x[4]:.3f} W/(mK)")
+#print(f"  alpha_const (surface albedo): {result.x[3]:.3f}")
+print(f"  theta_e (irreducible water content): {result.x[3]:.4f}")
 print(f"\nOptimal energy residual: {result.fun/1e6:.3f} MJ/m²")
 print(f"\nFinal residual: {result.fun/1e6:.3f} MJ/m²")
 print(f"Number of iterations: {result.nit}")
