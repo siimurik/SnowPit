@@ -223,6 +223,191 @@ Improvement: 100.0% reduction in energy residual
 real    15m39.264s
 user    15m36.353s
 sys     0m2.780s
+
+============================================================
+============================================================
+Energy Balance Diagnostics
+============================================================
+
+Configuration:
+  Advanced insulation:    True
+  Multi-layer insulation: True (20 layers)
+  Refreezing:             True
+  Percolation:            True
+
+Energy fluxes [MJ/m²]:
+  Air convection:        606.975
+  Solar radiation:       451.944
+  Rain heat:               1.595
+  Evaporation:            -4.373
+  Ground heat:            38.548
+  ─────────────────────────────
+  Total input:          1094.689
+
+Energy storage/losses [MJ/m²]:
+  Snow temperature:       31.401
+  Melting:              1056.675
+  Refreezing:              6.612
+  ─────────────────────────────
+  Energy residual:        -0.000
+
+Mass balance:
+  Total melt:              3.450 m w.e.
+  Total runoff:         3182.541 kg/m²
+  Melt rate (avg):        22.549 mm/day
+
+============================================================
+============================================================
+============================================================
+============================================================
+Optimization iteration 314
+  k_snow   = 0.730671 W/mK
+  h_ground = 3.572872 W/m²K
+  moist_cont = 37.192414 %
+  theta_e  = 0.055048
+============================================================
+Enhanced Snow Storage RC Model with Real Data
+============================================================
+
+Loading meteorological data from DATA_2024.csv...
+Loaded 3672 hourly data points
+Period: 2024-04-01T00:00 to 2024-08-31T23:00
+Soil temperature data available: True
+  Soil temp range: 5.1 to 11.3 °C
+
+Simulation settings:
+  Duration: 3672 hours (153.0 days)
+  Time step: 600.0 s (10.0 min)
+  Total steps: 22032
+  Multi-layer insulation: True (20 layers)
+  Refreezing: True
+  Percolation: True
+
+Running simulation...
+  Progress: 25%
+  Progress: 50%
+  Progress: 75%
+  Progress: 100%
+
+Simulation complete!
+
+============================================================
+Energy Balance Diagnostics
+============================================================
+
+Configuration:
+  Advanced insulation:    True
+  Multi-layer insulation: True (20 layers)
+  Refreezing:             True
+  Percolation:            True
+
+Energy fluxes [MJ/m²]:
+  Air convection:        606.975
+  Solar radiation:       451.944
+  Rain heat:               1.595
+  Evaporation:            -4.373
+  Ground heat:            38.548
+  ─────────────────────────────
+  Total input:          1094.689
+
+Energy storage/losses [MJ/m²]:
+  Snow temperature:       31.401
+  Melting:              1056.675
+  Refreezing:              6.612
+  ─────────────────────────────
+  Energy residual:        -0.000
+
+Mass balance:
+  Total melt:              3.450 m w.e.
+  Total runoff:         3182.541 kg/m²
+  Melt rate (avg):        22.549 mm/day
+
+============================================================
+Optimization iteration 315
+  k_snow   = 0.730671 W/mK
+  h_ground = 3.572872 W/m²K
+  moist_cont = 37.192414 %
+  theta_e  = 0.055048
+============================================================
+Enhanced Snow Storage RC Model with Real Data
+============================================================
+
+Loading meteorological data from DATA_2024.csv...
+Loaded 3672 hourly data points
+Period: 2024-04-01T00:00 to 2024-08-31T23:00
+Soil temperature data available: True
+  Soil temp range: 5.1 to 11.3 °C
+
+Simulation settings:
+  Duration: 3672 hours (153.0 days)
+  Time step: 600.0 s (10.0 min)
+  Total steps: 22032
+  Multi-layer insulation: True (20 layers)
+  Refreezing: True
+  Percolation: True
+
+Running simulation...
+  Progress: 25%
+  Progress: 50%
+  Progress: 75%
+  Progress: 100%
+
+Simulation complete!
+
+============================================================
+Energy Balance Diagnostics
+============================================================
+
+Configuration:
+  Advanced insulation:    True
+  Multi-layer insulation: True (20 layers)
+  Refreezing:             True
+  Percolation:            True
+
+Energy fluxes [MJ/m²]:
+  Air convection:        606.975
+  Solar radiation:       451.944
+  Rain heat:               1.595
+  Evaporation:            -4.373
+  Ground heat:            38.548
+  ─────────────────────────────
+  Total input:          1094.689
+
+Energy storage/losses [MJ/m²]:
+  Snow temperature:       31.401
+  Melting:              1056.675
+  Refreezing:              6.612
+  ─────────────────────────────
+  Energy residual:         0.000
+
+Mass balance:
+  Total melt:              3.450 m w.e.
+  Total runoff:         3182.541 kg/m²
+  Melt rate (avg):        22.549 mm/day
+
+============================================================
+OPTIMIZATION COMPLETE!
+============================================================
+
+Optimal parameters:
+  k_snow (snow conductivity): 0.730671 W/(mK)
+  h_ground (soil conductivity): 3.572872 m
+  moist_cont (Moisture content): 37.192414 %
+  theta_e (irreducible water content): 0.055048
+
+Optimal energy residual: 0.000 MJ/m²
+
+Final residual: 0.000 MJ/m²
+Number of iterations: 3
+Optimization success: False
+
+Improvement: 100.0% reduction in energy residual
+
+real	6m52,169s
+user	6m55,445s
+sys	0m0,439s
+(compy3.12) ei076p:~/.../Impr_Hossein$ 
+
 """
 
 iteration_count = [0]  # Use list to make it mutable in nested function
@@ -236,15 +421,15 @@ def objective_function(params):
 
     print(f"\n{'='*60}")
     print(f"Optimization iteration {iteration_count[0]}")
-    print(f"  k_snow   = {k_snow:.3f} W/mK")
-    print(f"  h_ground = {h_ground:.3f} W/m²K")
+    print(f"  k_snow   = {k_snow:.6f} W/mK")
+    print(f"  h_ground = {h_ground:.6f} W/m²K")
 #    print(f"  Hi       = {Hi:.3f} m")
     #print(f"  k_i_base = {k_i_base:.3f} W/mK")
-    print(f"  moist_cont = {moist_cont:.1f} %")
+    print(f"  moist_cont = {moist_cont:.6f} %")
     #print(f"  Hg_ins   = {Hg_ins:.3f} m")
     #print(f"  kg_ins   = {kg_ins:.3f} W/m²K")
     #print(f"  alpha_const = {alpha_const:.3f}")
-    print(f"  theta_e  = {theta_e:.4f}")
+    print(f"  theta_e  = {theta_e:.6f}")
     
     # Sanity checks
     if k_snow <= 0 or h_ground <= 0 or moist_cont <= 0 or theta_e <= 0:
@@ -1081,10 +1266,10 @@ bounds = [
 
 # Initial guess - Use physically reasonable middle values
 x0 = [  
-        0.30,    # k_snow - typical aged snow
-        0.60,    # h_ground - mid-range soil HTC
-        60.0,    # moist_cont - moderate moisture
-        0.035   # theta_e - typical field capacity
+        0.73,    # k_snow - typical aged snow
+        3.53,    # h_ground - mid-range soil HTC
+        36.1,    # moist_cont - moderate moisture
+        0.055   # theta_e - typical field capacity
     ]
 # Optimize
 result = minimize(  
@@ -1094,7 +1279,7 @@ result = minimize(
         method='L-BFGS-B',  # Gradient-based optimization with bounds
         options={
             'maxiter': 50,      # Maximum iterations
-            'ftol': 1e-6,       # Function tolerance
+            'ftol': 1e-5,       # Function tolerance
             'gtol': 1e-5,       # Gradient tolerance
             'disp': True        # Display convergence messages
         }
@@ -1103,14 +1288,14 @@ print(f"\n{'='*60}")
 print("OPTIMIZATION COMPLETE!")
 print(f"{'='*60}")
 print(f"\nOptimal parameters:")
-print(f"  k_snow (snow conductivity): {result.x[0]:.3f} W/(mK)")
-print(f"  h_ground (soil conductivity): {result.x[1]:.3f} m")
+print(f"  k_snow (snow conductivity): {result.x[0]:.6f} W/(mK)")
+print(f"  h_ground (soil conductivity): {result.x[1]:.6f} m")
 #print(f"  k_i_base (base conductivity): {result.x[2]:.3f} W/(mK)")
-print(f"  moist_cont (Moisture content): {result.x[2]:.1f} %")
+print(f"  moist_cont (Moisture content): {result.x[2]:.6f} %")
 #print(f"  Hg_ins (ground insulation): {result.x[3]:.3f} m")
 #print(f"  kg_ins (ground insulation conductivity): {result.x[4]:.3f} W/(mK)")
 #print(f"  alpha_const (surface albedo): {result.x[3]:.3f}")
-print(f"  theta_e (irreducible water content): {result.x[3]:.4f}")
+print(f"  theta_e (irreducible water content): {result.x[3]:.6f}")
 print(f"\nOptimal energy residual: {result.fun/1e6:.3f} MJ/m²")
 print(f"\nFinal residual: {result.fun/1e6:.3f} MJ/m²")
 print(f"Number of iterations: {result.nit}")
