@@ -228,7 +228,7 @@ end subroutine read_csv_data
 
 
 ! ============================================================
-!  REFREEZING SUBROUTINE (no dt parameter - removed)
+!  REFREEZING SUBROUTINE 
 ! ============================================================
 subroutine refreezing_layer(T_layer, LWC_layer, ice_frac, dz_layer, Tfreeze, rho_i, rho_w, &
                             c_s, c_w, Lf, new_T, new_LWC, new_ice_frac, refrozen_mass)
@@ -249,11 +249,22 @@ subroutine refreezing_layer(T_layer, LWC_layer, ice_frac, dz_layer, Tfreeze, rho
         return
     end if
     
-    ! Calculate maximum refreezing based on cold content
+    ! Temperature difference (negative when T < Tfreeze)
     dT_max = T_layer - Tfreeze
-    dtheta_w_max = -(dT_max * (ice_frac * rho_i * c_s + LWC_layer * rho_w * c_w)) / (rho_w * Lf)
+
+    !dtheta_w_max = -(dT_max * (ice_frac * rho_i * c_s + LWC_layer * rho_w * c_w)) / (rho_w * Lf)
+    ! Maximum water that can refreeze based on cold content
+    ! This includes the correction term in denominator for energy balance
+    dtheta_w_max = -(dT_max * (ice_frac * rho_i * c_s + LWC_layer * rho_w * c_w)) / &
+                    (rho_w * (Lf - dT_max * (c_s - c_w)))
+    
+    ! Actual refrozen water (limited by available liquid water)
     dtheta_w = min(LWC_layer, dtheta_w_max)
+
+    ! Change in ice fraction
     dtheta_i = (rho_w / rho_i) * dtheta_w
+
+    ! Temperature change from latent heat release
     dT = (dtheta_w * rho_w * Lf) / (ice_frac * rho_i * c_s + LWC_layer * rho_w * c_w)
     
     new_T = T_layer + dT
