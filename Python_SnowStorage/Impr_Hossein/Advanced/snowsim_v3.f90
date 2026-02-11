@@ -232,6 +232,28 @@ end subroutine read_csv_data
 ! ============================================================
 subroutine refreezing_layer(T_layer, LWC_layer, ice_frac, dz_layer, Tfreeze, rho_i, rho_w, &
                             c_s, c_w, Lf, new_T, new_LWC, new_ice_frac, refrozen_mass)
+    !--------------------------------------------------------------------
+    ! Refreeze water in a single layer based on cold content.
+    ! Following Bartelt & Lehning (2002) approach as implemented in COSIPY.
+    !
+    ! Args:
+    !     T_layer: Layer temperature [K]
+    !     LWC_layer: Liquid water content (volumetric fraction) [-]
+    !     ice_frac: Ice volume fraction [-]
+    !     dz_layer: Layer thickness [m]
+    !     Tfreeze: Freezing point temperature [K]
+    !     rho_i: Ice density [kg/m³]
+    !     rho_w: Water density [kg/m³]
+    !     c_s: Ice/snow specific heat [J/(kg·K)]
+    !     c_w: Water specific heat [J/(kg·K)]
+    !     Lf: Latent heat of fusion [J/kg]
+    !
+    ! Returns:
+    !     new_T: Updated layer temperature [K]
+    !     new_LWC: Updated liquid water content [-]
+    !     new_ice_frac: Updated ice fraction [-]
+    !     refrozen_mass: Mass of refrozen water [kg/m²]
+    !--------------------------------------------------------------------
     implicit none
     
     double precision, intent(in) :: T_layer, LWC_layer, ice_frac, dz_layer
