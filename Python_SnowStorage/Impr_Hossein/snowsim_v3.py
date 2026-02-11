@@ -9,9 +9,9 @@ from datetime import datetime
 #  Improvements:
 #  1. Real meteorological data from CSV
 #  2. Multi-layer insulation option
-#  3. Refreezing with cold content
+#  3. Refreezing with cold content (FIXED)
 #  4. Percolation with bucket method
-#  5. Advanced insulation model with moisture and age
+#  5. Advanced insulation model with moisture and age 
 # ------------------------------------------------------------
 # New features:
 #   * Fixed huge bottleneck of multilayer insulation solver 
@@ -370,16 +370,30 @@ def compute_insulation_resistance_multilayer(T_env, h_out, T_snow, h_in, k_eff, 
 # ============================================================
 @njit
 def refreezing_layer(T_layer, LWC_layer, ice_frac):
-    """Refreeze water in a single layer based on cold content."""
+    """Refreeze water in a single layer based on cold content.
+    
+    Following Bartelt & Lehning (2002) approach as implemented in COSIPY.
+    """
     if (T_layer >= Tfreeze) or (LWC_layer <= 0.0):
         return T_layer, LWC_layer, ice_frac, 0.0
     
+    # Temperature difference (negative when T < Tfreeze)
     dT_max = T_layer - Tfreeze
-    dtheta_w_max = -(dT_max * (ice_frac * rho_i * c_s + LWC_layer * rho_w * c_w)) / (rho_w * Lf)
-    dtheta_w = min(LWC_layer, dtheta_w_max)
-    dtheta_i = (rho_w / rho_i) * dtheta_w
-    dT = (dtheta_w * rho_w * Lf) / (ice_frac * rho_i * c_s + LWC_layer * rho_w * c_w)
     
+    # Maximum water that can refreeze based on cold content
+    # This includes the correction term in denominator for energy balance
+    dtheta_w_max = -(dT_max * (ice_frac * rho_i * c_s + LWC_layer * rho_w * c_w)) / \
+                    (rho_w * (Lf - dT_max * (c_s - c_w)))
+    
+    # Actual refrozen water (limited by available liquid water)
+    dtheta_w = min(LWC_layer, dtheta_w_max)
+    
+    # Change in ice fraction
+    dtheta_i = (rho_w / rho_i) * dtheta_w
+    
+    # Temperature change from latent heat release
+    dT = (dtheta_w * rho_w * Lf) / (ice_frac * rho_i * c_s + LWC_layer * rho_w * c_w)
+
     new_T = T_layer + dT
     new_LWC = LWC_layer - dtheta_w
     new_ice_frac = ice_frac + dtheta_i

@@ -783,16 +783,30 @@ def objective_function(params):
         # ============================================================
         @njit
         def refreezing_layer(T_layer, LWC_layer, ice_frac):
-            """Refreeze water in a single layer based on cold content."""
+            """Refreeze water in a single layer based on cold content.
+            
+            Following Bartelt & Lehning (2002) approach as implemented in COSIPY.
+            """
             if (T_layer >= Tfreeze) or (LWC_layer <= 0.0):
                 return T_layer, LWC_layer, ice_frac, 0.0
             
+            # Temperature difference (negative when T < Tfreeze)
             dT_max = T_layer - Tfreeze
-            dtheta_w_max = -(dT_max * (ice_frac * rho_i * c_s + LWC_layer * rho_w * c_w)) / (rho_w * Lf)
-            dtheta_w = min(LWC_layer, dtheta_w_max)
-            dtheta_i = (rho_w / rho_i) * dtheta_w
-            dT = (dtheta_w * rho_w * Lf) / (ice_frac * rho_i * c_s + LWC_layer * rho_w * c_w)
             
+            # Maximum water that can refreeze based on cold content
+            # This includes the correction term in denominator for energy balance
+            dtheta_w_max = -(dT_max * (ice_frac * rho_i * c_s + LWC_layer * rho_w * c_w)) / \
+                            (rho_w * (Lf - dT_max * (c_s - c_w)))
+            
+            # Actual refrozen water (limited by available liquid water)
+            dtheta_w = min(LWC_layer, dtheta_w_max)
+            
+            # Change in ice fraction
+            dtheta_i = (rho_w / rho_i) * dtheta_w
+            
+            # Temperature change from latent heat release
+            dT = (dtheta_w * rho_w * Lf) / (ice_frac * rho_i * c_s + LWC_layer * rho_w * c_w)
+
             new_T = T_layer + dT
             new_LWC = LWC_layer - dtheta_w
             new_ice_frac = ice_frac + dtheta_i
@@ -1260,17 +1274,19 @@ bounds = [
     (0.0, 150.0),  # moist_cont: moisture content [%]
 #    (0.0, 0.5),   # Hg_ins: ground insulation [m]
 #    (0.01, 1.0),  # kg_ins: ground insulation conductivity [W/(mK)]
-#    (0.5, 0.95),  # alpha: surface coating (0.2=white, 0.95=dark)
+#    (0.1, 0.50),  # alpha: saturated / wet woodchips
     (0.01, 0.06)  # theta_e: irreducible water content (0.01-0.3)
 ]
 
 # Initial guess - Use physically reasonable middle values
 x0 = [  
         0.73,    # k_snow - typical aged snow
-        3.53,    # h_ground - mid-range soil HTC
-        36.1,    # moist_cont - moderate moisture
+        3.57,    # h_ground - mid-range soil HTC
+        37.2,    # moist_cont - moderate moisture
+#        0.25,   # alpha_const
         0.055   # theta_e - typical field capacity
     ]
+
 # Optimize
 result = minimize(  
         objective_function, 
@@ -1279,11 +1295,12 @@ result = minimize(
         method='L-BFGS-B',  # Gradient-based optimization with bounds
         options={
             'maxiter': 50,      # Maximum iterations
-            'ftol': 1e-5,       # Function tolerance
-            'gtol': 1e-5,       # Gradient tolerance
+            'ftol': 1e-6,       # Function tolerance
+            'gtol': 1e-6,       # Gradient tolerance
             'disp': True        # Display convergence messages
         }
     )
+
 print(f"\n{'='*60}")
 print("OPTIMIZATION COMPLETE!")
 print(f"{'='*60}")
