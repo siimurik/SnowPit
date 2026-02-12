@@ -23,31 +23,6 @@ Optimization success: False
 Improvement: 100.0% reduction in energy residual
 
 ============================================================
-OPTIMIZATION COMPLETE!
-============================================================
-
-Optimal parameters:
-  k_snow (snow conductivity): 0.300 W/(mK)
-  h_ground (soil conductivity): 0.600 m
-  k_i_base (base conductivity): 0.050 W/(mK)
-  Moisture content: 80.0 %
-  Hg_ins (ground insulation): 0.100 m
-  kg_ins (ground insulation conductivity): 0.100 W/(mK)
-  alpha_const (surface albedo): 0.800
-  theta_e (irreducible water content): 0.0500
-
-Optimal energy residual: 4.892 MJ/m²
-
-Final residual: 4.892 MJ/m²
-Number of iterations: 1
-Optimization success: True
-
-Improvement: 5.1% reduction in energy residual
-
-real	0m56,613s
-user	0m57,806s
-sys	0m0,224s
-============================================================
 Goal A: Calibration (make model match measurements)
 Fix design choices, optimize only measured properties:
 
@@ -66,28 +41,6 @@ params = [k_snow, h_ground, theta_e, moist_cont]
 minimize abs(E_residual)  # Get model to match reality
 ```
 Use case: "I built a pile, measured some temps, want to validate my model"
-
-============================================================
-OPTIMIZATION COMPLETE!
-============================================================
-
-Optimal parameters:
-  k_snow (snow conductivity): 0.300 W/(mK)
-  h_ground (soil conductivity): 0.600 m
-  moist_cont (Moisture content): 0.8 %
-  theta_e (irreducible water content): 0.0400
-
-Optimal energy residual: 0.890 MJ/m²
-
-Final residual: 0.890 MJ/m²
-Number of iterations: 1
-Optimization success: True
-
-Improvement: 82.7% reduction in energy residual
-
-real	3m40,847s
-user	3m41,962s
-sys	0m0,337s
 
 ============================================================
 Goal B: Design Optimization (find best system to build)
@@ -109,99 +62,6 @@ minimize total_cost(capital + operational)  # Economically optimal
 Use case: "I'm planning a new pile, what's the best design?"
 
 ============================================================
-Energy Balance Diagnostics
-============================================================
-
-Configuration:
-  Advanced insulation:    True
-  Multi-layer insulation: True (20 layers)
-  Refreezing:             True
-  Percolation:            True
-
-Energy fluxes [MJ/m²]:
-  Air convection:        606.973
-  Solar radiation:       451.944
-  Rain heat:               1.595
-  Evaporation:            -4.373
-  Ground heat:            38.534
-  ─────────────────────────────
-  Total input:          1094.673
-
-Energy storage/losses [MJ/m²]:
-  Snow temperature:       31.385
-  Melting:              1056.674
-  Refreezing:              6.614
-  ─────────────────────────────
-  Energy residual:        -0.000
-
-Mass balance:
-  Total melt:              3.450 m w.e.
-  Total runoff:         3182.512 kg/m²
-  Melt rate (avg):        22.549 mm/day
-
-============================================================
-Optimization iteration 425
-  k_snow   = 0.732 W/mK
-  h_ground = 3.535 W/m²K
-  moist_cont = 36.1 %
-  theta_e  = 0.0551
-============================================================
-Enhanced Snow Storage RC Model with Real Data
-============================================================
-
-Loading meteorological data from DATA_2024.csv...
-Loaded 3672 hourly data points
-Period: 2024-04-01T00:00 to 2024-08-31T23:00
-Soil temperature data available: True
-  Soil temp range: 5.1 to 11.3 °C
-
-Simulation settings:
-  Duration: 3672 hours (153.0 days)
-  Time step: 600.0 s (10.0 min)
-  Total steps: 22032
-  Multi-layer insulation: True (20 layers)
-  Refreezing: True
-  Percolation: True
-
-Running simulation...
-  Progress: 25%
-  Progress: 50%
-  Progress: 75%
-  Progress: 100%
-
-Simulation complete!
-
-============================================================
-Energy Balance Diagnostics
-============================================================
-
-Configuration:
-  Advanced insulation:    True
-  Multi-layer insulation: True (20 layers)
-  Refreezing:             True
-  Percolation:            True
-
-Energy fluxes [MJ/m²]:
-  Air convection:        606.973
-  Solar radiation:       451.944
-  Rain heat:               1.595
-  Evaporation:            -4.373
-  Ground heat:            38.534
-  ─────────────────────────────
-  Total input:          1094.673
-
-Energy storage/losses [MJ/m²]:
-  Snow temperature:       31.385
-  Melting:              1056.674
-  Refreezing:              6.614
-  ─────────────────────────────
-  Energy residual:         0.000
-
-Mass balance:
-  Total melt:              3.450 m w.e.
-  Total runoff:         3182.512 kg/m²
-  Melt rate (avg):        22.549 mm/day
-
 ============================================================
 OPTIMIZATION COMPLETE!
 ============================================================
@@ -226,187 +86,26 @@ sys     0m2.780s
 
 ============================================================
 ============================================================
-Energy Balance Diagnostics
-============================================================
-
-Configuration:
-  Advanced insulation:    True
-  Multi-layer insulation: True (20 layers)
-  Refreezing:             True
-  Percolation:            True
-
-Energy fluxes [MJ/m²]:
-  Air convection:        606.975
-  Solar radiation:       451.944
-  Rain heat:               1.595
-  Evaporation:            -4.373
-  Ground heat:            38.548
-  ─────────────────────────────
-  Total input:          1094.689
-
-Energy storage/losses [MJ/m²]:
-  Snow temperature:       31.401
-  Melting:              1056.675
-  Refreezing:              6.612
-  ─────────────────────────────
-  Energy residual:        -0.000
-
-Mass balance:
-  Total melt:              3.450 m w.e.
-  Total runoff:         3182.541 kg/m²
-  Melt rate (avg):        22.549 mm/day
-
-============================================================
-============================================================
-============================================================
-============================================================
-Optimization iteration 314
-  k_snow   = 0.730671 W/mK
-  h_ground = 3.572872 W/m²K
-  moist_cont = 37.192414 %
-  theta_e  = 0.055048
-============================================================
-Enhanced Snow Storage RC Model with Real Data
-============================================================
-
-Loading meteorological data from DATA_2024.csv...
-Loaded 3672 hourly data points
-Period: 2024-04-01T00:00 to 2024-08-31T23:00
-Soil temperature data available: True
-  Soil temp range: 5.1 to 11.3 °C
-
-Simulation settings:
-  Duration: 3672 hours (153.0 days)
-  Time step: 600.0 s (10.0 min)
-  Total steps: 22032
-  Multi-layer insulation: True (20 layers)
-  Refreezing: True
-  Percolation: True
-
-Running simulation...
-  Progress: 25%
-  Progress: 50%
-  Progress: 75%
-  Progress: 100%
-
-Simulation complete!
-
-============================================================
-Energy Balance Diagnostics
-============================================================
-
-Configuration:
-  Advanced insulation:    True
-  Multi-layer insulation: True (20 layers)
-  Refreezing:             True
-  Percolation:            True
-
-Energy fluxes [MJ/m²]:
-  Air convection:        606.975
-  Solar radiation:       451.944
-  Rain heat:               1.595
-  Evaporation:            -4.373
-  Ground heat:            38.548
-  ─────────────────────────────
-  Total input:          1094.689
-
-Energy storage/losses [MJ/m²]:
-  Snow temperature:       31.401
-  Melting:              1056.675
-  Refreezing:              6.612
-  ─────────────────────────────
-  Energy residual:        -0.000
-
-Mass balance:
-  Total melt:              3.450 m w.e.
-  Total runoff:         3182.541 kg/m²
-  Melt rate (avg):        22.549 mm/day
-
-============================================================
-Optimization iteration 315
-  k_snow   = 0.730671 W/mK
-  h_ground = 3.572872 W/m²K
-  moist_cont = 37.192414 %
-  theta_e  = 0.055048
-============================================================
-Enhanced Snow Storage RC Model with Real Data
-============================================================
-
-Loading meteorological data from DATA_2024.csv...
-Loaded 3672 hourly data points
-Period: 2024-04-01T00:00 to 2024-08-31T23:00
-Soil temperature data available: True
-  Soil temp range: 5.1 to 11.3 °C
-
-Simulation settings:
-  Duration: 3672 hours (153.0 days)
-  Time step: 600.0 s (10.0 min)
-  Total steps: 22032
-  Multi-layer insulation: True (20 layers)
-  Refreezing: True
-  Percolation: True
-
-Running simulation...
-  Progress: 25%
-  Progress: 50%
-  Progress: 75%
-  Progress: 100%
-
-Simulation complete!
-
-============================================================
-Energy Balance Diagnostics
-============================================================
-
-Configuration:
-  Advanced insulation:    True
-  Multi-layer insulation: True (20 layers)
-  Refreezing:             True
-  Percolation:            True
-
-Energy fluxes [MJ/m²]:
-  Air convection:        606.975
-  Solar radiation:       451.944
-  Rain heat:               1.595
-  Evaporation:            -4.373
-  Ground heat:            38.548
-  ─────────────────────────────
-  Total input:          1094.689
-
-Energy storage/losses [MJ/m²]:
-  Snow temperature:       31.401
-  Melting:              1056.675
-  Refreezing:              6.612
-  ─────────────────────────────
-  Energy residual:         0.000
-
-Mass balance:
-  Total melt:              3.450 m w.e.
-  Total runoff:         3182.541 kg/m²
-  Melt rate (avg):        22.549 mm/day
-
-============================================================
 OPTIMIZATION COMPLETE!
 ============================================================
 
 Optimal parameters:
-  k_snow (snow conductivity): 0.730671 W/(mK)
-  h_ground (soil conductivity): 3.572872 m
-  moist_cont (Moisture content): 37.192414 %
-  theta_e (irreducible water content): 0.055048
+  k_snow (snow conductivity): 0.731665 W/(mK)
+  h_ground (soil conductivity): 3.675021 m
+  moist_cont (Moisture content): 36.318144 %
+  theta_e (irreducible water content): 0.055119
 
 Optimal energy residual: 0.000 MJ/m²
 
 Final residual: 0.000 MJ/m²
-Number of iterations: 3
+Number of iterations: 5
 Optimization success: False
 
 Improvement: 100.0% reduction in energy residual
 
-real	6m52,169s
-user	6m55,445s
-sys	0m0,439s
-(compy3.12) ei076p:~/.../Impr_Hossein$ 
+real    14m0.456s
+user    13m54.597s
+sys     0m2.510s
 
 """
 
@@ -1306,7 +1005,7 @@ print("OPTIMIZATION COMPLETE!")
 print(f"{'='*60}")
 print(f"\nOptimal parameters:")
 print(f"  k_snow (snow conductivity): {result.x[0]:.6f} W/(mK)")
-print(f"  h_ground (soil conductivity): {result.x[1]:.6f} m")
+print(f"  h_ground (soil conductivity): {result.x[1]:.6f} W/(m²K)")
 #print(f"  k_i_base (base conductivity): {result.x[2]:.3f} W/(mK)")
 print(f"  moist_cont (Moisture content): {result.x[2]:.6f} %")
 #print(f"  Hg_ins (ground insulation): {result.x[3]:.3f} m")
