@@ -693,7 +693,7 @@ program main_enhanced
     Ns   = 3.0D0                ! number of snow layers
     dz_s = Hs / Ns              ! thickness per snow layer [m]
     
-    k_snow = 0.730671D0            ! snow conductivity [W/(mK)], 0.5D0
+    k_snow = 0.731665D0         ! snow conductivity [W/(mK)], 0.5D0
     Hi     = 0.20D0             ! insulation thickness [m]
     
     ! Multi-layer insulation setup
@@ -708,7 +708,7 @@ program main_enhanced
     ! Insulation material properties
     k_i_base   = 0.32D0         ! base thermal conductivity [W/(mK)]
     rho_dry    = 100.0D0        ! dry density [kg/m^3]
-    moist_cont = 37.192414D0         ! moisture content [%], 60.0D0
+    moist_cont = 36.318144D0         ! moisture content [%], 60.0D0
     rho_wet    = rho_dry + moist_cont/100.0D0*1000.0D0 ! wet density [kg/m^3]
     c_dry      = 0.99D3         ! dry specific heat [J/(kg*K)]
     c_wet      = (1.0D0 - moist_cont/100.0D0)*c_dry + moist_cont/100.0D0*c_w ! wet specific heat
@@ -756,8 +756,8 @@ program main_enhanced
     T3_init = 273.15D0 - 6.0D0
     Tempe = [T1_init, T2_init, T3_init]
     
-    theta_e = 0.055048D0      ! Effective porosity for percolation, 0.035D0 
-    h_ground = 3.572872D0       ! Ground HTC [W/m²K], 5.0D0
+    theta_e = 0.055119D0      ! Effective porosity for percolation, 0.035D0 
+    h_ground = 3.675021D0       ! Ground HTC [W/(m²K)], 5.0D0
     !Tg_deep= 273.15D0 + 3.0D0  ! Now read from CSV in the time loop
     k_soil = 1.5D0          ! Soil conductivity [W/(mK)]
     L_soil = 1.0D0          ! Soil layer thickness [m]
@@ -826,7 +826,7 @@ program main_enhanced
     print *, ""
     !if (USE_CSV_DATA) then
         print *, "Loading meteorological data from DATA.csv..."
-        call read_csv_data('/home/ei076p/Documents/SnowPit/Python_SnowStorage/Impr_Hossein/DATA_2024.csv', met_data, status)
+        call read_csv_data('/mnt/c/Users/sipuga/Documents/SnowPit/Python_SnowStorage/Impr_Hossein/DATA_2024.csv', met_data, status)
         if (status /= 0) then
             print *, "FATAL ERROR: Could not read DATA.csv. File may be missing or formatted incorrectly."
             stop
