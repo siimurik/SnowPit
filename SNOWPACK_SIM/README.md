@@ -1,4 +1,6 @@
-Let me read your files first to understand what the simulation is doing.Good — I have everything I need. Now I'll generate all four SNOWPACK files from the data directly.All four files are ready — converted directly from your data. Here's a summary of how the Python model maps to SNOWPACK:
+```
+snowpack -c snow_storage.ini -e 2024-08-31T23:00 2>&1 | head -40
+```
 
 **`snow_storage.smet`** — generated from all 3,672 rows of DATA_2024.csv (Apr–Aug 2024), with fields:
 - `TA` (K), `RH` (0–1), `VW` (m/s), `ISWR` (W/m²), `PSUM` (kg/m²/h from m/h×1000), `TSG` (soil temp in K from `Soil_Temp_320cm`)

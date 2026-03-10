@@ -121,6 +121,11 @@ def run_python_sim(met, dt=600.0):
     Simplified 3-layer RC snow model from snowsim_v3.py.
     Advanced insulation and Numba removed; constant insulation resistance used.
 
+    USE_ADVANCED_INSULATION = False
+    USE_REFREEZING = False
+    USE_PERCOLATION = True
+    USE_MULTILAYER_INSULATION = False
+
     Parameters
     ----------
     met : dict of np.ndarray   hourly forcing arrays

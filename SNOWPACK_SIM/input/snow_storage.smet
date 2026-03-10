@@ -2,9 +2,9 @@ SMET 1.1 ASCII
 [HEADER]
 station_id       = snow_storage
 station_name     = Snow Storage Site
-latitude         = 60.0
-longitude        = 25.0
-altitude         = 100.0
+latitude         = 59.39805555555556
+longitude        = 24.602777777777778
+altitude         = 33.16
 nodata           = -999
 tz               = 0
 source           = DATA_2024.csv

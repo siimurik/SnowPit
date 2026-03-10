@@ -2,9 +2,9 @@ SMET 1.1 ASCII
 [HEADER]
 station_id       = snow_storage
 station_name     = Snow Storage Site
-longitude        = 25.0
-latitude         = 60.0
-altitude         = 100.0
+longitude        = 24.602777777777778
+latitude         = 59.39805555555556
+altitude         = 33.16
 nodata           = -999
 tz               = 0
 source           = converted from snowsim_v3.py initial conditions
@@ -12,7 +12,7 @@ ProfileDate      = 2024-04-01T00:00
 HS_Last          = 4.5000
 SlopeAngle       = 0.0
 SlopeAzi         = 0.0
-nSoilLayerData   = 0
+nSoilLayerData   = 1
 nSnowLayerData   = 3
 SoilAlbedo       = 0.09
 BareSoil_z0      = 0.020
@@ -23,6 +23,30 @@ ErosionLevel     = 0
 TimeCountDeltaHS = 0.000000
 fields           = timestamp Layer_Thick  T  Vol_Frac_I  Vol_Frac_W  Vol_Frac_V  Vol_Frac_S Rho_S Conduc_S HeatCapac_S  rg  rb  dd  sp  mk mass_hoar ne CDot metamo
 [DATA]
-2024-04-01T00:00 1.5  271.15  0.436  0.000  0.564  0.0  0.0  0.0  0.0  0.40  0.20  0.0  1.0  0  0.0  1  0.0  0.0
-2024-04-01T00:00 1.5  269.15  0.436  0.000  0.564  0.0  0.0  0.0  0.0  0.40  0.20  0.0  1.0  0  0.0  1  0.0  0.0
-2024-04-01T00:00 1.5  267.15  0.436  0.000  0.564  0.0  0.0  0.0  0.0  0.40  0.20  0.0  1.0  0  0.0  1  0.0  0.0
+; -----------------------------------------------------------------------
+; SOIL LAYER: insulation cover (wood chips / organic mulch)
+;   Mapped from snowsim_v3.py InsPar:
+;     Hi      = 0.20 m           layer thickness
+;     rho_dry = 100 kg/m3        dry bulk density
+;     k_dry   = 0.06 W/(mK)     initial (dry) thermal conductivity -> Conduc_S
+;     moist_cont = 60%           initial moisture content
+;     Vol_Frac_W = 0.60*100/1000 = 0.060  (liquid water volume fraction)
+;     Vol_Frac_S = 100/1300      = 0.077  (solid organic fraction, rho_mineral=1300)
+;     Vol_Frac_V = 1-0.06-0.077  = 0.863  (air pore space)
+;     Rho_S      = 1300 kg/m3    mineral/organic matrix density
+;     Conduc_S   = 0.06 W/(mK)   dry conductivity (SNOWPACK updates with moisture)
+;     HeatCapac_S= c_dry*rho_dry/Vol_Frac_S = 990*100/0.077 = 1.285e6 J/m3/K
+;     T          = 278.15 K (5°C) — between April air (~11°C) and snow surface (~-2°C)
+;     mk=9 flags this element as a soil layer to SNOWPACK
+; -----------------------------------------------------------------------
+; timestamp        Thick   T       Vi      Vw      Vv      Vs      RhoS    CondS   HcapS    rg    rb    dd   sp  mk  mhoar ne CDot  metamo
+2024-04-01T00:00   0.20  278.15  0.000   0.060   0.863   0.077  1300.0   0.060  1285000.0  0.0   0.0  0.0  0.0  9   0.0  1  0.0   0.0
+; -----------------------------------------------------------------------
+; SNOW LAYERS: 3 x 1.5 m, rho=400 kg/m3, ice_frac=0.436
+;   T1 (top)    = 271.15 K (-2°C)
+;   T2 (middle) = 269.15 K (-4°C)
+;   T3 (bottom) = 267.15 K (-6°C)
+; -----------------------------------------------------------------------
+2024-04-01T00:00   1.50  271.15  0.436   0.000   0.564   0.0    0.0      0.0     0.0       0.40  0.20  0.0  1.0  0   0.0  1  0.0   0.0
+2024-04-01T00:00   1.50  269.15  0.436   0.000   0.564   0.0    0.0      0.0     0.0       0.40  0.20  0.0  1.0  0   0.0  1  0.0   0.0
+2024-04-01T00:00   1.50  267.15  0.436   0.000   0.564   0.0    0.0      0.0     0.0       0.40  0.20  0.0  1.0  0   0.0  1  0.0   0.0
