@@ -1,0 +1,28 @@
+SMET 1.1 ASCII
+[HEADER]
+station_id       = snow_storage
+station_name     = Snow Storage Site
+longitude        = 25.0
+latitude         = 60.0
+altitude         = 100.0
+nodata           = -999
+tz               = 0
+source           = converted from snowsim_v3.py initial conditions
+ProfileDate      = 2024-04-01T00:00
+HS_Last          = 4.5000
+SlopeAngle       = 0.0
+SlopeAzi         = 0.0
+nSoilLayerData   = 0
+nSnowLayerData   = 3
+SoilAlbedo       = 0.09
+BareSoil_z0      = 0.020
+CanopyHeight     = 0.00
+CanopyLeafAreaIndex = 0.00
+CanopyDirectThroughfall = 1.00
+ErosionLevel     = 0
+TimeCountDeltaHS = 0.000000
+fields           = timestamp Layer_Thick  T  Vol_Frac_I  Vol_Frac_W  Vol_Frac_V  Vol_Frac_S Rho_S Conduc_S HeatCapac_S  rg  rb  dd  sp  mk mass_hoar ne CDot metamo
+[DATA]
+2024-04-01T00:00 1.5  271.15  0.436  0.000  0.564  0.0  0.0  0.0  0.0  0.40  0.20  0.0  1.0  0  0.0  1  0.0  0.0
+2024-04-01T00:00 1.5  269.15  0.436  0.000  0.564  0.0  0.0  0.0  0.0  0.40  0.20  0.0  1.0  0  0.0  1  0.0  0.0
+2024-04-01T00:00 1.5  267.15  0.436  0.000  0.564  0.0  0.0  0.0  0.0  0.40  0.20  0.0  1.0  0  0.0  1  0.0  0.0
