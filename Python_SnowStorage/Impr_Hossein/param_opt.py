@@ -138,7 +138,7 @@ def objective_function(params):
         USE_ADVANCED_INSULATION = True
         USE_REFREEZING = True
         USE_PERCOLATION = True
-        USE_MULTILAYER_INSULATION = True
+        USE_MULTILAYER_INSULATION = False
 
         # ---------- Physical constants ----------
         sigma   = 5.670374419e-8      # Stefan-Boltzmann [W/m^2 K^4]
@@ -167,7 +167,7 @@ def objective_function(params):
             dz_ins = Hi
 
         # Insulation material properties
-        k_i_base = 0.32               # base thermal conductivity [W/(mK)]
+        k_i_base = 0.07               # base thermal conductivity [W/(mK)]
         rho_dry = 100.0               # dry density [kg/m^3]
         #moist_cont = 60.0             # moisture content [%]
         rho_wet = rho_dry + moist_cont/100.0*1000  # wet density [kg/m^3]
@@ -298,15 +298,15 @@ def objective_function(params):
         if USE_ADVANCED_INSULATION:
             InsPar = {
                 "Hi":     Hi,
-                "k_dry":  0.06,
-                "k_sat":  0.30,
+                "k_dry":  0.05,
+                "k_sat":  0.12,
                 "n_k":    1.5,
 
                 "W_sat":   30.0,
                 "W_field": 10.0,
 
-                "alpha_dry": 0.10,
-                "alpha_wet": 0.25,
+                "alpha_dry": 0.05,
+                "alpha_wet": 0.08,
                 "n_alpha":   1.0,
 
                 "delta_k_age":     0.5,
@@ -981,7 +981,7 @@ bounds = [
 x0 = [  
         0.73,    # k_snow - typical aged snow
         3.57,    # h_ground - mid-range soil HTC
-        37.2,    # moist_cont - moderate moisture
+        60.0,    # moist_cont - moderate moisture
 #        0.25,   # alpha_const
         0.055   # theta_e - typical field capacity
     ]

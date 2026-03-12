@@ -21,12 +21,25 @@ from datetime import datetime
 #     based on wind and environment. Inner boundary is static 
 #     based on snow contact.
 #   * Bottom ground flux now uses Robin BC with ground HTC.
+# Changed values (more realistic and cloiser to woodchips):
+#     k_i_base = 0.07       # dry woodchips, W/(mK)
+#     k_dry     = 0.05      # InsPar
+#     k_sat     = 0.12      # saturated woodchips
+#     moist_cont = 60.0     # % — realistic field condition
+#     alpha_dry  = 0.05
+#     alpha_wet  = 0.08
+# ------------------------------------------------------------
+# Optimal parameters:
+#   k_snow (snow conductivity): 0.423558 W/(mK)
+#   h_ground (soil conductivity): 1.511638 W/(m²K)
+#   moist_cont (Moisture content): 60.000000 %
+#   theta_e (irreducible water content): 0.056854
 # ============================================================
 
 USE_ADVANCED_INSULATION = True
 USE_REFREEZING = True
 USE_PERCOLATION = True
-USE_MULTILAYER_INSULATION = True
+USE_MULTILAYER_INSULATION = False
 
 # ---------- Physical constants ----------
 sigma   = 5.670374419e-8      # Stefan-Boltzmann [W/m^2 K^4]
@@ -43,7 +56,7 @@ Hs   = 4.5                    # total snow thickness [m]
 Ns   = 3                      # number of snow layers
 dz_s = Hs / Ns                # thickness per snow layer [m]
 
-k_snow = 0.731665 # 0.50      # snow conductivity [W/(mK)]
+k_snow = 0.423558 # 0.50      # snow conductivity [W/(mK)]
 Hi     = 0.20                 # insulation thickness [m]
 
 # Multi-layer insulation setup
@@ -55,18 +68,16 @@ else:
     dz_ins = Hi
 
 # Insulation material properties
-k_i_base = 0.32               # base thermal conductivity [W/(mK)]
+k_i_base = 0.07               # base thermal conductivity [W/(mK)]
 rho_dry = 100.0               # dry density [kg/m^3]
-moist_cont = 60.0             # moisture content [%]
+moist_cont = 36.318144             # moisture content [%]
 rho_wet = rho_dry + moist_cont/100.0*1000  # wet density [kg/m^3]
 c_dry = 0.99e3                # dry specific heat [J/(kg*K)]
 c_wet = (1.0 - moist_cont/100.0)*c_dry + moist_cont/100.0*c_w  # wet specific heat
 D_ins = k_i_base / (c_wet * rho_wet)  # thermal diffusivity [m^2/s]
 
 # Ground boundary condition - Robin BC
-h_ground = 3.675021  # Ground heat transfer coefficient [W/m²K]
-                # Typical range: 2-5 W/(m²K) for soil interface
-                # Reference: NREL/TP-550-33954 (Deru, 2003)
+h_ground = 1.511638  # Ground heat transfer coefficient [W/m²K]
                 # Lower values = better insulated ground
                 # Higher values = more conductive ground/higher water table
 
@@ -109,11 +120,28 @@ T = np.array([T1_init, T2_init, T3_init], dtype=float)
 
 # ---------- Layer properties for refreezing/percolation ----------
 LWC = np.array([0.0, 0.0, 0.0], dtype=float)
-theta_e = 0.055119 # 0.035  # Irreducible water content
+theta_e = 0.056854 # 0.035  # Irreducible water content
 
 # Ice fractions (assuming constant for now)
 ice_fractions = np.array([0.4, 0.4, 0.4])
 heights = np.array([dz_s, dz_s, dz_s])
+
+# ============================================================
+#  Helper: Water vapour saturation pressure (from np_snow.py)
+# ============================================================
+def Psat_WV(T_K):
+    """
+    Water vapour saturation pressure [hPa] using the IAPWS-95 correlation.
+    T_K : absolute temperature [K]
+    """
+    Tc = 647.096   # Critical temperature [K]
+    Pc = 220640    # Critical pressure [hPa]
+    C1, C2, C3 = -7.85951783, 1.84408259, -11.7866497
+    C4, C5, C6 =  22.6807411, -15.9618719,  1.80122502
+    teta = 1.0 - T_K / Tc
+    x = Tc / T_K * (C1*teta + C2*teta**1.5 + C3*teta**3
+                    + C4*teta**3.5 + C5*teta**4 + C6*teta**7.5)
+    return np.exp(x) * Pc
 
 # ============================================================
 #  CSV Data Loading Functions
@@ -186,15 +214,15 @@ def interpolate_data(data_vec, t_query, dt_data=3600.0):
 if USE_ADVANCED_INSULATION:
     InsPar = {
         "Hi":     Hi,
-        "k_dry":  0.06,
-        "k_sat":  0.30,
+        "k_dry":  0.05,
+        "k_sat":  0.12,
         "n_k":    1.5,
 
         "W_sat":   30.0,
         "W_field": 10.0,
 
-        "alpha_dry": 0.10,
-        "alpha_wet": 0.25,
+        "alpha_dry": 0.05,
+        "alpha_wet": 0.08,
         "n_alpha":   1.0,
 
         "delta_k_age":     0.5,
@@ -974,15 +1002,106 @@ def main():
     print(f"  Melt rate (avg):    {M_melt/(n_hours/24)*1000:>10.3f} mm/day")
     
     # ============================================================
+    #  Empirical SMR comparison (emp1 & emp2 from np_snow.py)
+    # ============================================================
+    print("\n" + "="*60)
+    print("Empirical SMR Comparison")
+    print("="*60)
+
+    # Build hourly arrays directly from met_data (same length as the CSV)
+    n_h = len(met_data['temp'])
+    air_temp_h   = np.array(met_data['temp'],   dtype=float)   # °C
+    air_vel_h    = np.array(met_data['wind'],   dtype=float)   # m/s
+    glob_sol_h   = np.array(met_data['solar'],  dtype=float)   # W/m²
+    rh_h         = np.array(met_data['rh'],     dtype=float)   # %
+    prec_h       = np.array(met_data['precip'], dtype=float)   # m/h
+
+    # Insulation parameters mirroring np_snow.py (use same d_ins / lam_i as this script)
+    _d_ins = Hi        # 0.20 m  (snowsim_v4 value)
+    _lam_i = k_i_base  # 0.32 W/(mK)
+    _rho_snow_emp = rho_s          # kg/m³
+    _Lf_emp       = Lf             # J/kg
+    _rho_water    = rho_w          # kg/m³
+    _c_water      = c_w            # J/(kg K)
+
+    # ---- Empirical model 1: temperature-index + solar + wind ----
+    #   emp1 [mm/h] = -0.09 + 0.00014*I + 0.0575*T + 0.0012*T*U - 0.18*T*d_ins
+    emp1_h = (-0.09
+              + 0.00014 * glob_sol_h
+              + 0.0575  * air_temp_h
+              + 0.0012  * air_temp_h * air_vel_h
+              - 0.18    * air_temp_h * _d_ins)
+    # Zero out negative melt rates and sub-zero air temps
+    emp1_wc_h = np.where((emp1_h < 0) | (air_temp_h < 0), 0.0, emp1_h)  # mm/h
+
+    # ---- Empirical model 2: adds humidity (absolute) ----
+    #   emp2 [mm/h] = -0.97 - 0.097*(d_ins*100) + 0.164*U + 0.00175*I + 0.102*T + 0.192*w
+    Psat_h = Psat_WV(air_temp_h + 273.15) / 10.0          # hPa -> kPa
+    Pw_h   = Psat_h * rh_h / 100.0                         # actual vapour pressure [kPa]
+    # Absolute humidity [g/m³]: w = 2.16679 * Pw[Pa] / T[K]
+    w_h    = 2.16679 * Pw_h * 1000.0 / (273.15 + air_temp_h)
+
+    emp2_h = (-0.97
+              - 0.097 * (_d_ins * 100)
+              + 0.164 * air_vel_h
+              + 0.00175 * glob_sol_h
+              + 0.102   * air_temp_h
+              + 0.192   * w_h)
+    emp2_wc_h = np.where((emp2_h < 0) | (air_temp_h < 0), 0.0, emp2_h)  # mm/h
+
+    # Cumulative sums [mm total snow melt equivalent]
+    emp1_cs = np.cumsum(emp1_wc_h)
+    emp2_cs = np.cumsum(emp2_wc_h)
+
+    # ---- Snowsim SMR: convert from m w.e. to mm, then to hourly resolution ----
+    # melt_rate_hist is [m w.e./s] at sub-hourly dt; resample to hourly for fair comparison.
+    steps_per_hour = int(dt_data / dt)  # e.g. 3600/600 = 6
+
+    # Total melt depth [mm w.e.] per simulation step, then downsample to hourly
+    melt_mm_step = melt_rate_hist[:-1] * dt * 1000.0  # mm w.e. per step
+    n_full_hours = min(n_h, len(melt_mm_step) // steps_per_hour)
+    melt_mm_hourly = np.array(
+        [np.sum(melt_mm_step[i*steps_per_hour:(i+1)*steps_per_hour])
+         for i in range(n_full_hours)]
+    )
+    snowsim_cs = np.cumsum(melt_mm_hourly)
+
+    # Trim empirical arrays to match available simulation hours
+    emp1_cs_trim = emp1_cs[:n_full_hours]
+    emp2_cs_trim = emp2_cs[:n_full_hours]
+    emp1_h_trim  = emp1_wc_h[:n_full_hours]
+    emp2_h_trim  = emp2_wc_h[:n_full_hours]
+
+    days_hourly = np.arange(n_full_hours) / 24.0
+
+    # ---- Print summary statistics ----
+    print(f"\nTotal cumulative SMR over {n_full_hours} hours ({n_full_hours/24:.1f} days):")
+    print(f"  Snowsim v4 (RC model):  {snowsim_cs[-1]:>10.1f} mm w.e.")
+    print(f"  Emp. model 1 (T+solar): {emp1_cs_trim[-1]:>10.1f} mm w.e.")
+    print(f"  Emp. model 2 (+humid.): {emp2_cs_trim[-1]:>10.1f} mm w.e.")
+
+    # Bias relative to emp1
+    bias1 = snowsim_cs[-1] - emp1_cs_trim[-1]
+    bias2 = snowsim_cs[-1] - emp2_cs_trim[-1]
+    print(f"\nSnowsim bias vs Emp1: {bias1:+.1f} mm  ({100*bias1/max(emp1_cs_trim[-1],1e-9):+.1f}%)")
+    print(f"Snowsim bias vs Emp2: {bias2:+.1f} mm  ({100*bias2/max(emp2_cs_trim[-1],1e-9):+.1f}%)")
+
+    # Hourly RMSE
+    rmse1 = np.sqrt(np.mean((melt_mm_hourly - emp1_h_trim)**2))
+    rmse2 = np.sqrt(np.mean((melt_mm_hourly - emp2_h_trim)**2))
+    print(f"\nHourly RMSE vs Emp1: {rmse1:.3f} mm/h")
+    print(f"Hourly RMSE vs Emp2: {rmse2:.3f} mm/h")
+
+    # ============================================================
     #  Plots
     # ============================================================
     print("\nGenerating plots...")
     days = t_vec / (24.0 * 3600.0)
     
-    fig = plt.figure(figsize=(14, 12))  # Increased height for additional plot
-    
+    fig = plt.figure(figsize=(14, 16))  # Extra height for SMR comparison panel
+
     # Temperature evolution
-    ax1 = plt.subplot(5, 2, 1)
+    ax1 = plt.subplot(6, 2, 1)
     ax1.plot(days, Ta_hist - 273.15, 'k--', linewidth=1, label='Air temp', alpha=0.7)
     ax1.plot(days, Tsoil_hist - 273.15, 'g--', linewidth=1, label='Soil temp', alpha=0.7)  # NEW
     ax1.plot(days, T_hist[:,0] - 273.15, label='T1 (surface)', linewidth=1.5)
@@ -995,14 +1114,14 @@ def main():
     ax1.set_title('Snow Layer Temperatures with Soil Temp')
     
     # Solar radiation
-    ax2 = plt.subplot(5, 2, 2)
+    ax2 = plt.subplot(6, 2, 2)
     ax2.fill_between(days, 0, Isolar_hist, alpha=0.5)
     ax2.set_ylabel('Solar [W/m²]')
     ax2.grid(True, alpha=0.3)
     ax2.set_title('Solar Radiation Input')
     
     # Liquid water content
-    ax3 = plt.subplot(5, 2, 3)
+    ax3 = plt.subplot(6, 2, 3)
     ax3.plot(days, LWC_hist[:,0], label='Layer 1 (surface)', linewidth=1.5)
     ax3.plot(days, LWC_hist[:,1], label='Layer 2 (middle)', linewidth=1.5)
     ax3.plot(days, LWC_hist[:,2], label='Layer 3 (bottom)', linewidth=1.5)
@@ -1013,14 +1132,14 @@ def main():
     ax3.set_title('Liquid Water Content')
     
     # Precipitation
-    ax4 = plt.subplot(5, 2, 4)
+    ax4 = plt.subplot(6, 2, 4)
     ax4.fill_between(days, 0, Prain_hist * 1000.0 * 3600.0, alpha=0.5, color='blue')
     ax4.set_ylabel('Precip [mm/h]')
     ax4.grid(True, alpha=0.3)
     ax4.set_title('Precipitation')
     
     # Melt and runoff
-    ax5 = plt.subplot(5, 2, 5)
+    ax5 = plt.subplot(6, 2, 5)
     cumulative_melt = np.cumsum(melt_rate_hist * dt)
     cumulative_runoff = np.cumsum(runoff_hist)
     ax5.plot(days, cumulative_melt, label='Cumulative melt', linewidth=2)
@@ -1032,7 +1151,7 @@ def main():
     ax5.set_title('Melt and Runoff')
     
     # Heat fluxes
-    ax6 = plt.subplot(5, 2, 6)
+    ax6 = plt.subplot(6, 2, 6)
     ax6.plot(days, qsolar_hist, label='Solar', linewidth=1, alpha=0.7)
     ax6.plot(days, qrain_hist, label='Rain', linewidth=1, alpha=0.7)
     ax6.plot(days, qevap_hist, label='Evaporation', linewidth=1, alpha=0.7)
@@ -1045,7 +1164,7 @@ def main():
     ax6.set_title('Surface and Ground Heat Fluxes')
     
     # Ground temperature comparison
-    ax9 = plt.subplot(5, 2, 7)  # NEW PLOT
+    ax9 = plt.subplot(6, 2, 7)  # NEW PLOT
     ax9.plot(days, Tsoil_hist - 273.15, 'g-', label='Soil temp (320cm)', linewidth=1.5)
     ax9.plot(days, T_hist[:,2] - 273.15, 'b-', label='T3 (bottom snow)', linewidth=1.5)
     ax9.plot(days, qground_hist, 'r-', label='Ground heat flux', linewidth=1)
@@ -1058,7 +1177,7 @@ def main():
     
     # Insulation properties (if advanced model)
     if USE_ADVANCED_INSULATION:
-        ax7 = plt.subplot(5, 2, 8)
+        ax7 = plt.subplot(6, 2, 8)
         ax7_twin = ax7.twinx()
         ln1 = ax7.plot(days, k_eff_hist, 'b-', label='k_eff', linewidth=1.5)
         ln2 = ax7_twin.plot(days, alpha_hist, 'r-', label='α_eff', linewidth=1.5)
@@ -1073,13 +1192,37 @@ def main():
         ax7.set_xlabel('Time [days]')
         ax7.set_title('Insulation Properties')
         
-        ax8 = plt.subplot(5, 2, 9)
+        ax8 = plt.subplot(6, 2, 9)
         ax8.plot(days, W_hist, linewidth=1.5, color='steelblue')
         ax8.set_ylabel('Moisture [kg/m²]')
         ax8.set_xlabel('Time [days]')
         ax8.grid(True, alpha=0.3)
         ax8.set_title('Insulation Moisture Content')
     
+    # ---- SMR comparison: cumulative [mm] ----
+    ax_cmp1 = plt.subplot(6, 2, 11)
+    ax_cmp1.plot(days_hourly, snowsim_cs,    color='steelblue', linewidth=2,   label='Snowsim v4 (RC model)')
+    ax_cmp1.plot(days_hourly, emp1_cs_trim,  color='darkorange', linewidth=1.5, linestyle='--', label='Emp. 1  (T + solar + wind)')
+    ax_cmp1.plot(days_hourly, emp2_cs_trim,  color='forestgreen', linewidth=1.5, linestyle=':',  label='Emp. 2  (+ humidity)')
+    ax_cmp1.set_ylabel('Cumulative melt [mm w.e.]')
+    ax_cmp1.set_xlabel('Time [days]')
+    ax_cmp1.legend(loc='upper left', fontsize=8)
+    ax_cmp1.grid(True, alpha=0.3)
+    ax_cmp1.set_title(f'Cumulative SMR Comparison\n'
+                      f'Bias vs Emp1: {bias1:+.1f} mm  |  Bias vs Emp2: {bias2:+.1f} mm')
+
+    # ---- SMR comparison: hourly melt rate [mm/h] ----
+    ax_cmp2 = plt.subplot(6, 2, 12)
+    ax_cmp2.plot(days_hourly, melt_mm_hourly, color='steelblue',  linewidth=1,   alpha=0.8, label='Snowsim v4')
+    ax_cmp2.plot(days_hourly, emp1_h_trim,    color='darkorange', linewidth=1,   alpha=0.7, linestyle='--', label='Emp. 1')
+    ax_cmp2.plot(days_hourly, emp2_h_trim,    color='forestgreen', linewidth=1,  alpha=0.7, linestyle=':',  label='Emp. 2')
+    ax_cmp2.set_ylabel('Hourly melt rate [mm/h]')
+    ax_cmp2.set_xlabel('Time [days]')
+    ax_cmp2.legend(loc='upper right', fontsize=8)
+    ax_cmp2.grid(True, alpha=0.3)
+    ax_cmp2.set_title(f'Hourly SMR Comparison\n'
+                      f'RMSE vs Emp1: {rmse1:.3f} mm/h  |  RMSE vs Emp2: {rmse2:.3f} mm/h')
+
     plt.tight_layout()
     plt.savefig('snow_storage_simulation_v3.png', dpi=150, bbox_inches='tight')
     print("  Saved plot: snow_storage_simulation_v3.png")
