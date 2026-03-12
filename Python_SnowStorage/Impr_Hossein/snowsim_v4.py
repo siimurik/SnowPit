@@ -284,6 +284,81 @@ def solve_tdma(a, b, c, d, n):
 
     return x
 
+# ============================================================
+#  Transient 1D insulation solver for SMR comparison
+#  Ported from np_snow.py / pd_snow.py — uses same TDMA core.
+#  Solves the implicit 1D heat equation through the insulation
+#  layer with Robin BCs at both surfaces (outer: wind-driven
+#  h_o; inner: fixed snow contact at 0°C via h_i).
+#  Returns the full hourly temperature profile (nodes x hours).
+# ============================================================
+@njit
+def transient1D_smr(t_o, h_o, d_ins, lam_i, D, dx=0.005, dt=10.0, h_i=99.75):
+    """
+    Transient 1D conduction through insulation layer.
+
+    Parameters
+    ----------
+    t_o   : hourly sol-air temperature array [°C], length = n_hours
+    h_o   : hourly external HTC array [W/m²K],    length = n_hours
+    d_ins : insulation thickness [m]
+    lam_i : insulation thermal conductivity [W/(mK)]
+    D     : insulation thermal diffusivity [m²/s]
+    dx    : spatial step [m]  (default 5 mm)
+    dt    : time sub-step [s] (default 10 s)
+    h_i   : inner surface HTC [W/m²K] (insulation-snow contact)
+
+    Returns
+    -------
+    T_nh : temperature array, shape (nodes, n_hours)
+           T_nh[0,:]  = outer surface temperature [°C]
+           T_nh[-1,:] = inner surface temperature Tsi [°C]
+    """
+    t_i    = 0.0                   # inner BC: snow surface fixed at 0 °C
+    n_el   = d_ins / dx
+    nodes  = int(n_el + 1)
+    n_hours = len(t_o)
+    nh     = int(3600 / dt)        # sub-steps per hour
+
+    T_n  = np.zeros(nodes)
+    T_nh = np.zeros((nodes, n_hours))
+
+    a = np.zeros(nodes)
+    b = np.zeros(nodes)
+    c = np.zeros(nodes)
+    d = np.zeros(nodes)
+
+    for h in range(n_hours):
+        dFo    = D   * dt / dx**2
+        dBio_i = h_i * dx / lam_i
+        dBio_o = h_o[h] * dx / lam_i
+
+        for k in range(nh):
+            # Outer node (Robin BC, environment side)
+            b[0] = 1.0 + 2.0*dFo + 2.0*dFo*dBio_o
+            c[0] = -2.0 * dFo
+            d[0] = T_n[0] + 2.0*dFo*dBio_o*t_o[h]
+            a[0] = 0.0
+
+            # Interior nodes
+            for j in range(1, nodes - 1):
+                a[j] = -dFo
+                b[j] = 1.0 + 2.0*dFo
+                c[j] = -dFo
+                d[j] = T_n[j]
+
+            # Inner node (Robin BC, snow side — fixed 0 °C)
+            a[-1] = -2.0 * dFo
+            b[-1] = 1.0 + 2.0*dFo + 2.0*dFo*dBio_i
+            c[-1] = 0.0
+            d[-1] = T_n[-1] + 2.0*dFo*dBio_i*t_i
+
+            T_n = solve_tdma(a, b, c, d, nodes)
+
+        T_nh[:, h] = T_n
+
+    return T_nh
+
 @njit
 def compute_insulation_resistance_multilayer_core(T_env, h_out, T_snow, h_in, k_eff, dt_main, T_n_init, dt_substep=10.0):
     """
@@ -1026,6 +1101,7 @@ def main():
 
     # ---- Empirical model 1: temperature-index + solar + wind ----
     #   emp1 [mm/h] = -0.09 + 0.00014*I + 0.0575*T + 0.0012*T*U - 0.18*T*d_ins
+    # Seasonal Snow Storage for Space and Process Cooling" by Kjell Skogsberg (2005), p. 39
     emp1_h = (-0.09
               + 0.00014 * glob_sol_h
               + 0.0575  * air_temp_h
@@ -1036,6 +1112,7 @@ def main():
 
     # ---- Empirical model 2: adds humidity (absolute) ----
     #   emp2 [mm/h] = -0.97 - 0.097*(d_ins*100) + 0.164*U + 0.00175*I + 0.102*T + 0.192*w
+    # DOI: https://doi.org/10.1016/j.coldregions.2005.06.001
     Psat_h = Psat_WV(air_temp_h + 273.15) / 10.0          # hPa -> kPa
     Pw_h   = Psat_h * rh_h / 100.0                         # actual vapour pressure [kPa]
     # Absolute humidity [g/m³]: w = 2.16679 * Pw[Pa] / T[K]
@@ -1049,9 +1126,51 @@ def main():
               + 0.192   * w_h)
     emp2_wc_h = np.where((emp2_h < 0) | (air_temp_h < 0), 0.0, emp2_h)  # mm/h
 
+    # ---- Transient 1D insulation model (np_snow.py / pd_snow.py method) ----
+    # Sol-air temperature: equivalent outdoor driving temperature accounting
+    # for solar absorption at the insulation outer surface.
+    #   T_sol_air = alpha * I / h_o + T_air  (no correction factor here —
+    #   np_snow.py uses T_cor_fact=4 °C but that was calibrated for a different
+    #   site; we omit it so the comparison is driven purely by physics)
+    _alpha_solair = 0.80          # solar absorptivity of woodchip surface
+    _h_i_tdma    = 99.75          # inner contact HTC [W/m²K] (np_snow.py value)
+
+    # External HTC from wind speed (same formula as compute_h_out)
+    h_o_h = np.where(air_vel_h <= 5.0,
+                     6.0 + 4.0 * air_vel_h,
+                     7.41 * air_vel_h**0.78)
+
+    t_sol_air_h = _alpha_solair * glob_sol_h / h_o_h + air_temp_h
+
+    # Thermal diffusivity using the same properties as the RC model
+    _c_wet_tdma = (1.0 - moist_cont/100.0)*c_dry + moist_cont/100.0*c_w
+    _rho_wet_tdma = rho_dry + moist_cont/100.0*rho_w
+    _D_ins_tdma   = k_i_base / (_c_wet_tdma * _rho_wet_tdma)
+
+    print("\nRunning transient 1D insulation solver...")
+    T_nh = transient1D_smr(
+        t_sol_air_h.astype(np.float64),
+        h_o_h.astype(np.float64),
+        d_ins   = Hi,
+        lam_i   = k_i_base,
+        D       = _D_ins_tdma,
+        dx      = 0.005,
+        dt      = 10.0,
+        h_i     = _h_i_tdma
+    )
+    # Inner surface temperature [°C] — bottom of insulation, top of snow
+    Tsi_h = T_nh[-1, :]   # shape: (n_hours,)
+
+    # Melt flux from inner surface: q_i = Tsi * h_i [W/m²] (snow at 0 °C)
+    # Melt rate [mm/h] = q_i / (Lf * rho_s) * 3600 * 1000
+    tdma_melt_h = Tsi_h * _h_i_tdma / (Lf * rho_s) * 3600.0 * 1000.0
+    tdma_wc_h   = np.where((tdma_melt_h < 0) | (air_temp_h < 0), 0.0, tdma_melt_h)
+    print("  Transient 1D solver complete.")
+
     # Cumulative sums [mm total snow melt equivalent]
     emp1_cs = np.cumsum(emp1_wc_h)
     emp2_cs = np.cumsum(emp2_wc_h)
+    tdma_cs = np.cumsum(tdma_wc_h)
 
     # ---- Snowsim SMR: convert from m w.e. to mm, then to hourly resolution ----
     # melt_rate_hist is [m w.e./s] at sub-hourly dt; resample to hourly for fair comparison.
@@ -1069,28 +1188,35 @@ def main():
     # Trim empirical arrays to match available simulation hours
     emp1_cs_trim = emp1_cs[:n_full_hours]
     emp2_cs_trim = emp2_cs[:n_full_hours]
+    tdma_cs_trim = tdma_cs[:n_full_hours]
     emp1_h_trim  = emp1_wc_h[:n_full_hours]
     emp2_h_trim  = emp2_wc_h[:n_full_hours]
+    tdma_h_trim  = tdma_wc_h[:n_full_hours]
 
     days_hourly = np.arange(n_full_hours) / 24.0
 
     # ---- Print summary statistics ----
     print(f"\nTotal cumulative SMR over {n_full_hours} hours ({n_full_hours/24:.1f} days):")
-    print(f"  Snowsim v4 (RC model):  {snowsim_cs[-1]:>10.1f} mm w.e.")
-    print(f"  Emp. model 1 (T+solar): {emp1_cs_trim[-1]:>10.1f} mm w.e.")
-    print(f"  Emp. model 2 (+humid.): {emp2_cs_trim[-1]:>10.1f} mm w.e.")
+    print(f"  Snowsim v4 (RC model):      {snowsim_cs[-1]:>10.1f} mm w.e.")
+    print(f"  Transient 1D (TDMA):        {tdma_cs_trim[-1]:>10.1f} mm w.e.")
+    print(f"  Emp. model 1 (T+solar):     {emp1_cs_trim[-1]:>10.1f} mm w.e.")
+    print(f"  Emp. model 2 (+humid.):     {emp2_cs_trim[-1]:>10.1f} mm w.e.")
 
     # Bias relative to emp1
-    bias1 = snowsim_cs[-1] - emp1_cs_trim[-1]
-    bias2 = snowsim_cs[-1] - emp2_cs_trim[-1]
-    print(f"\nSnowsim bias vs Emp1: {bias1:+.1f} mm  ({100*bias1/max(emp1_cs_trim[-1],1e-9):+.1f}%)")
-    print(f"Snowsim bias vs Emp2: {bias2:+.1f} mm  ({100*bias2/max(emp2_cs_trim[-1],1e-9):+.1f}%)")
+    bias1  = snowsim_cs[-1] - emp1_cs_trim[-1]
+    bias2  = snowsim_cs[-1] - emp2_cs_trim[-1]
+    bias_t = snowsim_cs[-1] - tdma_cs_trim[-1]
+    print(f"\nSnowsim bias vs Emp1:   {bias1:+.1f} mm  ({100*bias1/max(emp1_cs_trim[-1],1e-9):+.1f}%)")
+    print(f"Snowsim bias vs Emp2:   {bias2:+.1f} mm  ({100*bias2/max(emp2_cs_trim[-1],1e-9):+.1f}%)")
+    print(f"Snowsim bias vs TDMA:   {bias_t:+.1f} mm  ({100*bias_t/max(tdma_cs_trim[-1],1e-9):+.1f}%)")
 
     # Hourly RMSE
-    rmse1 = np.sqrt(np.mean((melt_mm_hourly - emp1_h_trim)**2))
-    rmse2 = np.sqrt(np.mean((melt_mm_hourly - emp2_h_trim)**2))
-    print(f"\nHourly RMSE vs Emp1: {rmse1:.3f} mm/h")
-    print(f"Hourly RMSE vs Emp2: {rmse2:.3f} mm/h")
+    rmse1  = np.sqrt(np.mean((melt_mm_hourly - emp1_h_trim)**2))
+    rmse2  = np.sqrt(np.mean((melt_mm_hourly - emp2_h_trim)**2))
+    rmse_t = np.sqrt(np.mean((melt_mm_hourly - tdma_h_trim)**2))
+    print(f"\nHourly RMSE vs Emp1:  {rmse1:.3f} mm/h")
+    print(f"Hourly RMSE vs Emp2:  {rmse2:.3f} mm/h")
+    print(f"Hourly RMSE vs TDMA:  {rmse_t:.3f} mm/h")
 
     # ============================================================
     #  Plots
@@ -1201,27 +1327,29 @@ def main():
     
     # ---- SMR comparison: cumulative [mm] ----
     ax_cmp1 = plt.subplot(6, 2, 11)
-    ax_cmp1.plot(days_hourly, snowsim_cs,    color='steelblue', linewidth=2,   label='Snowsim v4 (RC model)')
-    ax_cmp1.plot(days_hourly, emp1_cs_trim,  color='darkorange', linewidth=1.5, linestyle='--', label='Emp. 1  (T + solar + wind)')
-    ax_cmp1.plot(days_hourly, emp2_cs_trim,  color='forestgreen', linewidth=1.5, linestyle=':',  label='Emp. 2  (+ humidity)')
+    ax_cmp1.plot(days_hourly, snowsim_cs,    color='steelblue',   linewidth=2,   label='Snowsim v4 (RC model)')
+    ax_cmp1.plot(days_hourly, tdma_cs_trim,  color='purple',      linewidth=1.5, linestyle='-.',  label='Transient 1D (TDMA)')
+    ax_cmp1.plot(days_hourly, emp1_cs_trim,  color='darkorange',  linewidth=1.5, linestyle='--',  label='Emp. 1  (T + solar + wind)')
+    ax_cmp1.plot(days_hourly, emp2_cs_trim,  color='forestgreen', linewidth=1.5, linestyle=':',   label='Emp. 2  (+ humidity)')
     ax_cmp1.set_ylabel('Cumulative melt [mm w.e.]')
     ax_cmp1.set_xlabel('Time [days]')
     ax_cmp1.legend(loc='upper left', fontsize=8)
     ax_cmp1.grid(True, alpha=0.3)
     ax_cmp1.set_title(f'Cumulative SMR Comparison\n'
-                      f'Bias vs Emp1: {bias1:+.1f} mm  |  Bias vs Emp2: {bias2:+.1f} mm')
+                      f'Bias vs Emp1: {bias1:+.1f} mm  |  Bias vs TDMA: {bias_t:+.1f} mm')
 
     # ---- SMR comparison: hourly melt rate [mm/h] ----
     ax_cmp2 = plt.subplot(6, 2, 12)
-    ax_cmp2.plot(days_hourly, melt_mm_hourly, color='steelblue',  linewidth=1,   alpha=0.8, label='Snowsim v4')
-    ax_cmp2.plot(days_hourly, emp1_h_trim,    color='darkorange', linewidth=1,   alpha=0.7, linestyle='--', label='Emp. 1')
+    ax_cmp2.plot(days_hourly, melt_mm_hourly, color='steelblue',   linewidth=1,  alpha=0.8, label='Snowsim v4')
+    ax_cmp2.plot(days_hourly, tdma_h_trim,    color='purple',      linewidth=1,  alpha=0.8, linestyle='-.', label='TDMA 1D')
+    ax_cmp2.plot(days_hourly, emp1_h_trim,    color='darkorange',  linewidth=1,  alpha=0.7, linestyle='--', label='Emp. 1')
     ax_cmp2.plot(days_hourly, emp2_h_trim,    color='forestgreen', linewidth=1,  alpha=0.7, linestyle=':',  label='Emp. 2')
     ax_cmp2.set_ylabel('Hourly melt rate [mm/h]')
     ax_cmp2.set_xlabel('Time [days]')
     ax_cmp2.legend(loc='upper right', fontsize=8)
     ax_cmp2.grid(True, alpha=0.3)
     ax_cmp2.set_title(f'Hourly SMR Comparison\n'
-                      f'RMSE vs Emp1: {rmse1:.3f} mm/h  |  RMSE vs Emp2: {rmse2:.3f} mm/h')
+                      f'RMSE vs Emp1: {rmse1:.3f} mm/h  |  RMSE vs TDMA: {rmse_t:.3f} mm/h')
 
     plt.tight_layout()
     plt.savefig('snow_storage_simulation_v3.png', dpi=150, bbox_inches='tight')
