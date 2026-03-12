@@ -1313,7 +1313,7 @@ def main():
         ax7_twin.tick_params(axis='y', labelcolor='r')
         lns = ln1 + ln2
         labs = [l.get_label() for l in lns]
-        ax7.legend(lns, labs, loc='best', fontsize=8)
+        ax7.legend(lns, labs, loc='upper left', fontsize=8)
         ax7.grid(True, alpha=0.3)
         ax7.set_xlabel('Time [days]')
         ax7.set_title('Insulation Properties')
