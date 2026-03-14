@@ -67,12 +67,12 @@ else:
     N_ins = 1
     dz_ins = Hi
 
-# Insulation material properties
+# Insulation material properties (WOODCHIPS)
 k_i_base = 0.07               # base thermal conductivity [W/(mK)]
-rho_dry = 100.0               # dry density [kg/m^3]
-moist_cont = 36.318144             # moisture content [%]
+rho_dry = 200.0               # dry density [kg/m^3]
+moist_cont = 36.318144        # moisture content [%]
 rho_wet = rho_dry + moist_cont/100.0*1000  # wet density [kg/m^3]
-c_dry = 0.99e3                # dry specific heat [J/(kg*K)]
+c_dry = 1.5e3                # dry specific heat [J/(kg*K)]
 c_wet = (1.0 - moist_cont/100.0)*c_dry + moist_cont/100.0*c_w  # wet specific heat
 D_ins = k_i_base / (c_wet * rho_wet)  # thermal diffusivity [m^2/s]
 
