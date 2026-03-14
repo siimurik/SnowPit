@@ -7,46 +7,166 @@ latitude         = 59.39805555555556
 altitude         = 33.16
 nodata           = -999
 tz               = 0
-source           = converted from snowsim_v3.py initial conditions
+source           = matched to snowsim_v4 RC model initial conditions
 ProfileDate      = 2024-04-01T00:00
-HS_Last          = 4.5000
+HS_Last          = 4.7000
 SlopeAngle       = 0.0
 SlopeAzi         = 0.0
-nSoilLayerData   = 1
-nSnowLayerData   = 3
-SoilAlbedo       = 0.09
+nSoilLayerData   = 2
+nSnowLayerData   = 4
+SoilAlbedo       = 0.20
 BareSoil_z0      = 0.020
 CanopyHeight     = 0.00
 CanopyLeafAreaIndex = 0.00
 CanopyDirectThroughfall = 1.00
 ErosionLevel     = 0
 TimeCountDeltaHS = 0.000000
-fields           = timestamp Layer_Thick  T  Vol_Frac_I  Vol_Frac_W  Vol_Frac_V  Vol_Frac_S Rho_S Conduc_S HeatCapac_S  rg  rb  dd  sp  mk mass_hoar ne CDot metamo
+fields           = timestamp Layer_Thick T Vol_Frac_I Vol_Frac_W Vol_Frac_V Vol_Frac_S Rho_S Conduc_S HeatCapac_S rg rb dd sp mk mass_hoar ne CDot metamo
 [DATA]
-; -----------------------------------------------------------------------
-; SOIL LAYER: insulation cover (wood chips / organic mulch)
-;   Mapped from snowsim_v3.py InsPar:
-;     Hi      = 0.20 m           layer thickness
-;     rho_dry = 100 kg/m3        dry bulk density
-;     k_dry   = 0.06 W/(mK)     initial (dry) thermal conductivity -> Conduc_S
-;     moist_cont = 60%           initial moisture content
-;     Vol_Frac_W = 0.60*100/1000 = 0.060  (liquid water volume fraction)
-;     Vol_Frac_S = 100/1300      = 0.077  (solid organic fraction, rho_mineral=1300)
-;     Vol_Frac_V = 1-0.06-0.077  = 0.863  (air pore space)
-;     Rho_S      = 1300 kg/m3    mineral/organic matrix density
-;     Conduc_S   = 0.06 W/(mK)   dry conductivity (SNOWPACK updates with moisture)
-;     HeatCapac_S= c_dry*rho_dry/Vol_Frac_S = 990*100/0.077 = 1.285e6 J/m3/K
-;     T          = 278.15 K (5°C) — between April air (~11°C) and snow surface (~-2°C)
-;     mk=9 flags this element as a soil layer to SNOWPACK
-; -----------------------------------------------------------------------
-; timestamp        Thick   T       Vi      Vw      Vv      Vs      RhoS    CondS   HcapS    rg    rb    dd   sp  mk  mhoar ne CDot  metamo
-2024-04-01T00:00   0.20  278.15  0.000   0.060   0.863   0.077  1300.0   0.060  1285000.0  0.0   0.0  0.0  0.0  9   0.0  1  0.0   0.0
-; -----------------------------------------------------------------------
-; SNOW LAYERS: 3 x 1.5 m, rho=400 kg/m3, ice_frac=0.436
-;   T1 (top)    = 271.15 K (-2°C)
-;   T2 (middle) = 269.15 K (-4°C)
-;   T3 (bottom) = 267.15 K (-6°C)
-; -----------------------------------------------------------------------
-2024-04-01T00:00   1.50  271.15  0.436   0.000   0.564   0.0    0.0      0.0     0.0       0.40  0.20  0.0  1.0  0   0.0  1  0.0   0.0
-2024-04-01T00:00   1.50  269.15  0.436   0.000   0.564   0.0    0.0      0.0     0.0       0.40  0.20  0.0  1.0  0   0.0  1  0.0   0.0
-2024-04-01T00:00   1.50  267.15  0.436   0.000   0.564   0.0    0.0      0.0     0.0       0.40  0.20  0.0  1.0  0   0.0  1  0.0   0.0
+; =======================================================================
+; SOIL LAYER 1 — Moist mineral soil (bottom-most)
+;
+; Python: R_cond = 1/1.5 = 0.667 m²K/W → thickness=1.0m, Conduc_S=1.50 W/(mK)
+; T = Soil_Temp_320cm at t=0 = 5.1°C = 278.25 K
+;
+; Rho_S       = 1300 kg/m³
+; Conduc_S    = 1.50 W/(mK)  ← matches Python R_cond = 1.0/1.5
+; HeatCapac_S = 1538 J/(kgK) ← SPECIFIC [J/(kgK)] = 2,000,000/1300
+; Vol_Frac_S  = 1300/2650 = 0.491
+; Vol_Frac_W  = 0.10
+; Vol_Frac_I  = 0.00
+; Vol_Frac_V  = 1 - 0.491 - 0.10 = 0.409
+; mk=9  (soil — Conduc_S locked, no metamorphism)
+; =======================================================================
+2024-04-01T00:00  1.00  278.25  0.00  0.10  0.409  0.491  1300.0  1.50  1538.0  0.0  0.0  0.0  0.0  9  0.0  1  0.0  0.0
+
+; =======================================================================
+; SOIL LAYER 2 — Concrete slab
+;
+; Thickness = 0.30 m
+; T = linear interpolation between soil (278.25K) and snow bottom (267.15K):
+;     fraction = 1.0/(1.0+0.3) = 0.769 from bottom
+;     T = 278.25 + 0.769*(267.15-278.25) = 269.71 K (-3.44°C)
+;
+; Rho_S       = 2300 kg/m³
+; Conduc_S    = 1.70 W/(mK)  → R_concrete = 0.30/1.70 = 0.176 m²K/W
+; HeatCapac_S =  880 J/(kgK) ← SPECIFIC (standard concrete)
+; Vol_Frac_S  = 2300/2650 = 0.868
+; Vol_Frac_W  = 0.02
+; Vol_Frac_I  = 0.00
+; Vol_Frac_V  = 1 - 0.868 - 0.02 = 0.112
+; mk=9  (soil marker — Conduc_S locked, no metamorphism)
+; =======================================================================
+2024-04-01T00:00  0.30  269.71  0.00  0.02  0.112  0.868  2300.0  1.70  880.0  0.0  0.0  0.0  0.0  9  0.0  1  0.0  0.0
+
+
+
+; =======================================================================
+; LAYER 3 — SNOW bottom (T3 in Python)
+;
+; Python initial conditions (run_python_sim):
+;   T[2] = 273.15 - 6.0 = 267.15 K
+;   ice_fractions[2] = 0.4  →  Vol_Frac_I = rho_s/rho_i = 400/917 = 0.436
+;   LWC[2] = 0.0            →  Vol_Frac_W = 0.0
+;   Vol_Frac_V = 1 - 0.436 - 0.0 = 0.564
+;   Layer thickness = Hs/Ns = 4.5/3 = 1.5 m
+;   rho_s = 400 kg/m³  →  rg=0.40 mm, rb=0.20 mm (aged rounded grains)
+;   dd=0.0, sp=1.0  (fully rounded, no dendricity — aged stored snow)
+;   mk=0  (standard dry snow, no special marker)
+; =======================================================================
+2024-04-01T00:00  1.50  267.15  0.436  0.000  0.564  0.0  0.0  0.0  0.0  0.40  0.20  0.0  1.0  0  0.0  1  0.0  0.0
+
+; =======================================================================
+; LAYER 4 — SNOW middle (T2 in Python)
+;
+;   T[1] = 273.15 - 4.0 = 269.15 K
+;   All other snow parameters identical to Layer 2
+; =======================================================================
+2024-04-01T00:00  1.50  269.15  0.436  0.000  0.564  0.0  0.0  0.0  0.0  0.40  0.20  0.0  1.0  0  0.0  1  0.0  0.0
+
+; =======================================================================
+; LAYER 5 — SNOW top (T1 in Python)
+;
+;   T[0] = 273.15 - 2.0 = 271.15 K
+;   All other snow parameters identical to Layer 2
+; =======================================================================
+2024-04-01T00:00  1.50  271.15  0.436  0.000  0.564  0.0  0.0  0.0  0.0  0.40  0.20  0.0  1.0  0  0.0  1  0.0  0.0
+
+; =======================================================================
+; LAYER 6 — INSULATION cover (wood chips, top-most layer)
+;
+; Python _INS_PAR / module-level constants:
+;   Hi       = 0.20 m              →  Layer_Thick = 0.20
+;   T_init   = midpoint(T_air=284K, T_snow_top=271K) = 277.6 K
+;   rho_dry  = 100 kg/m³
+;   W_init   = 5.0 kg/m²  →  Vol_Frac_W = W/(Hi*rho_w) = 5.0/(0.20*1000) = 0.025
+;   Vol_Frac_I = rho_dry/rho_ice_equiv ≈ 0.0  (wood chips, not ice)
+;              = use 0.067 as structural solid fraction (rho_dry/rho_wood=100/1500)
+;   Vol_Frac_V = 1 - 0.067 - 0.025 = 0.908
+;   Vol_Frac_S = 0.0  (must be 0 in snow-domain layers with mk≠9)
+;
+;   Conduc_S   = k_eff at W_init=5, f=W/W_sat=5/30=0.167:
+;                k_moist = k_dry + (k_sat-k_dry)*f^n_k
+;                        = 0.05 + (0.12-0.05)*0.167^1.5 = 0.05 + 0.07*0.068 = 0.055
+;                age_fac = 1.0 (age=0 days)  →  k_eff ≈ 0.055 W/(mK)
+;                (will evolve; use starting value 0.055)
+;
+;   HeatCapac_S = c_dry = 990 J/(kgK)
+;                 *** SPECIFIC heat [J/(kgK)], NOT volumetric ***
+;                 SNOWPACK computes: C_vol = Rho_S * HeatCapac_S = 100*990 = 99,000 J/(m³K) ✓
+;
+;   rg=0.5, rb=0.2  (nonzero required — avoids FPE in conductivity routines)
+;   mk=6  (technical/processed material — preserves user-specified Conduc_S,
+;           no standard snow metamorphism applied)
+; =======================================================================
+;2024-04-01T00:00  0.20  277.60  0.067  0.025  0.908  0.0       0.0  0.055  1285000.0  0.5  0.2  0.0  1.0  13  0.0  1  0.0  0.0
+;2024-04-01T00:00  0.20   278.15  0.0    0.0    0.846  0.154  1300.0  0.06   1285000    0.4  0.2  0.0  1.0  13  0.0  1  0.0  0.0
+
+; =======================================================================
+; INITIAL SNOW PROFILE FIELDS DESCRIPTION
+; =======================================
+; 
+; Field         Description
+; ------------- --------------------------------------------------
+; YYYY          Year
+; MM            Month
+; DD            Day
+; HH            Hour
+; MI            Minutes
+; Layer_Thick   layer thickness [m]
+; T             layer temperature [K]
+; Vol_Frac_I    fractional ice volume [0-1]
+; Vol_Frac_W    fractional water volume [0-1]
+; Vol_Frac_WP   fractional preferential flow water volume [0-1]
+; Vol_Frac_V    fractional voids volume [0-1]
+; Vol_Frac_S    fractional soil volume [0-1]
+; 
+; Rho_S         soil density [kg/m3]
+; Conduc_S      mineral phase soil thermal conductivity [w/(mK)]
+; HeatCapac_S   mineral phase soil thermal capacity [J/(kg*K)]
+; rg            grain radius [mm]
+; rb            bond radius [mm]
+; dd            dendricity [0-1]
+; sp            spericity [0-1]
+; mk            marker, see Metamorphism.cc
+; mass_hoar     mass of surface hoar []
+; ne            number of elements
+; CDot          stress change rate (initialize with 0.)
+; metamo        currently unused
+; =======================================================================
+
+; SAWDUST
+;timestamp  Layer_Thick    T    Vol_Frac_I Vol_Frac_W Vol_Frac_V Vol_Frac_S Rho_S  Conduc_S HeatCapac_S  rg   rb   dd   sp  mk mass_hoar ne CDot metamo 
+;2024-04-01T00:00  0.20   278.15      0.0       0.20       0.30      0.5     245.0    0.07      990.    1.0  0.2  0.0  1.0  13    0.0     1  0.0  0.0
+
+; WOODCHIPS
+;timestamp    Layer_Thick   T    Vol_Frac_I Vol_Frac_W Vol_Frac_V Vol_Frac_S  Rho_S  Conduc_S HeatCapac_S   rg   rb   dd   sp   mk mass_hoar ne CDot metamo 
+;2024-04-01T00:00  0.20    278.15      0.0       0.25       0.55      0.20     1500.0    0.15    1350.     15.0  2.5  0.2  0.45  13    0.0     1  0.0  0.0
+
+; WET WOODCHIPS
+;timestamp    Layer_Thick   T    Vol_Frac_I Vol_Frac_W Vol_Frac_V Vol_Frac_S  Rho_S  Conduc_S HeatCapac_S   rg   rb   dd   sp   mk mass_hoar ne CDot metamo 
+;2024-04-01T00:00  0.21    273.15     0.35       0.40       0.05      0.20     1550.0    0.52    2800.     16.0  8.0  0.4  0.35  13    0.0     1  0.0  0.0
+; Too much melt:
+
+; Tuned WOODCHIP values: 1056 (kg/m²) 
+2024-04-01T00:00  0.20    273.15      0.0       0.20       0.60      0.20     563.18144    0.12    1500.     15.0  2.5  0.2  0.45  13    0.0     1  0.0  0.0
