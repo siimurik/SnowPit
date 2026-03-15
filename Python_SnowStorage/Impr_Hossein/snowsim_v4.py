@@ -2,7 +2,10 @@ import numpy as np
 import matplotlib.pyplot as plt
 from numba import njit
 import csv
+import os
 from datetime import datetime
+
+import pandas as pd
 
 # ============================================================
 #  Enhanced Multi-layer Snow Storage RC Model with Real Data
@@ -799,6 +802,86 @@ def insulation_step(state_in, forc, p, dt):
     return R_ins, q_solar, q_rain_snow, q_evap, state_out
 
 # ============================================================
+#  SNOWPACK .met reader  (ported from comp_SNOWPACK_vs_python.py)
+# ============================================================
+
+# Offset to remove woodchip mass from SNOWPACK SWE (40 kg water + 22.53 kg solid)
+WOODCHIP_OFFSET = 62.53
+
+def read_snowpack_met(met_path):
+    """
+    Parse a SNOWPACK .met file into a DataFrame.
+    Returns (df, col_units) where df is indexed by datetime.
+    """
+    with open(met_path) as f:
+        lines = f.readlines()
+
+    header_block = [l for l in lines if l.startswith(',,') or l.startswith('ID,Date,')]
+    col_names_line  = header_block[1]
+    col_units_line  = header_block[2]
+
+    col_names     = [c.strip() for c in col_names_line.split(',')]
+    col_units_raw = [c.strip() for c in col_units_line.split(',')]
+    col_units     = {col_names[i]: col_units_raw[i]
+                     for i in range(min(len(col_names), len(col_units_raw)))}
+
+    data_rows = [l.strip().split(',') for l in lines if l[:4].isdigit()]
+
+    seen = {}; deduped = []
+    for name in col_names[:len(data_rows[0])]:
+        if name in seen:
+            seen[name] += 1
+            deduped.append(f"{name}_{seen[name]}")
+        else:
+            seen[name] = 0
+            deduped.append(name)
+
+    df = pd.DataFrame(data_rows, columns=deduped)
+    df['Date'] = pd.to_datetime(df['Date'].str.strip(), format='%d.%m.%Y %H:%M:%S')
+    df = df.set_index('Date').sort_index()
+
+    for c in df.columns:
+        if c not in ('ID',):
+            df[c] = pd.to_numeric(df[c], errors='coerce').replace(-999.0, np.nan)
+
+    return df, col_units
+
+
+def load_snowpack_smr(met_path, n_full_hours):
+    """
+    Load SNOWPACK .met file and return hourly cumulative runoff array
+    trimmed to n_full_hours, plus SWE and depth arrays for the SWE plot.
+
+    Returns
+    -------
+    sp_cs       : np.ndarray  cumulative runoff [kg/m²], length n_full_hours
+    sp_swe      : pd.Series   SWE (snow only) [kg/m²]
+    sp_depth    : pd.Series   snow depth [m]  (or None)
+    sp_index    : DatetimeIndex
+    """
+    sp, _ = read_snowpack_met(met_path)
+
+    sp_runoff_col = 'Snowpack runoff (virtual lysimeter -- snow only)'
+    if sp_runoff_col in sp.columns:
+        sp_runoff_h = sp[sp_runoff_col].fillna(0).values  # kg/m² per hour
+        sp_cs_full  = np.cumsum(sp_runoff_h)
+        sp_cs = sp_cs_full[:n_full_hours]
+    else:
+        print("  WARNING: SNOWPACK runoff column not found in .met file.")
+        sp_cs = np.zeros(n_full_hours)
+
+    sp_swe = None
+    if 'SWE (of snowpack)' in sp.columns:
+        sp_swe = sp['SWE (of snowpack)'] - WOODCHIP_OFFSET
+
+    sp_depth = None
+    if 'Modelled snow depth (vertical)' in sp.columns:
+        sp_depth = sp['Modelled snow depth (vertical)'] / 100.0  # cm -> m
+
+    return sp_cs, sp_swe, sp_depth, sp.index
+
+
+# ============================================================
 #  Main simulation
 # ============================================================
 def main():
@@ -825,6 +908,14 @@ def main():
         print("Please ensure DATA_2024.csv is in the same directory as this script.")
         return
     
+    # ---- Optional: load SNOWPACK .met for validation ----
+    SNOWPACK_MET = os.path.join('output', 'snow_storage_snow_storage.met')
+    snowpack_available = os.path.isfile(SNOWPACK_MET)
+    if snowpack_available:
+        print(f"\nSNOWPACK .met found: {SNOWPACK_MET}")
+    else:
+        print(f"\nSNOWPACK .met not found at '{SNOWPACK_MET}' — SNOWPACK curve will be skipped.")
+
     # Time integration settings
     t0 = 0.0
     dt = 600.0  # 10 min (much finer than 1-hour data)
@@ -1195,12 +1286,25 @@ def main():
 
     days_hourly = np.arange(n_full_hours) / 24.0
 
+    # ---- Load SNOWPACK arrays (optional) ----
+    if snowpack_available:
+        print(f"\nLoading SNOWPACK .met data...")
+        sp_cs, sp_swe, sp_depth, sp_index = load_snowpack_smr(SNOWPACK_MET, n_full_hours)
+        print(f"  SNOWPACK cumulative runoff (trimmed): {sp_cs[-1]:.1f} kg/m²")
+    else:
+        sp_cs   = None
+        sp_swe  = None
+        sp_depth = None
+        sp_index = None
+
     # ---- Print summary statistics ----
     print(f"\nTotal cumulative SMR over {n_full_hours} hours ({n_full_hours/24:.1f} days):")
     print(f"  Snowsim v4 (RC model):      {snowsim_cs[-1]:>10.1f} mm w.e.")
     print(f"  Transient 1D (TDMA):        {tdma_cs_trim[-1]:>10.1f} mm w.e.")
     print(f"  Emp. model 1 (T+solar):     {emp1_cs_trim[-1]:>10.1f} mm w.e.")
     print(f"  Emp. model 2 (+humid.):     {emp2_cs_trim[-1]:>10.1f} mm w.e.")
+    if sp_cs is not None:
+        print(f"  SNOWPACK (runoff):          {sp_cs[-1]:>10.1f} kg/m²")
 
     # Bias relative to emp1
     bias1  = snowsim_cs[-1] - emp1_cs_trim[-1]
@@ -1209,6 +1313,11 @@ def main():
     print(f"\nSnowsim bias vs Emp1:   {bias1:+.1f} mm  ({100*bias1/max(emp1_cs_trim[-1],1e-9):+.1f}%)")
     print(f"Snowsim bias vs Emp2:   {bias2:+.1f} mm  ({100*bias2/max(emp2_cs_trim[-1],1e-9):+.1f}%)")
     print(f"Snowsim bias vs TDMA:   {bias_t:+.1f} mm  ({100*bias_t/max(tdma_cs_trim[-1],1e-9):+.1f}%)")
+    if sp_cs is not None:
+        bias_sp = snowsim_cs[-1] - sp_cs[-1]
+        print(f"Snowsim bias vs SNOWPACK: {bias_sp:+.1f} mm  ({100*bias_sp/max(sp_cs[-1],1e-9):+.1f}%)")
+    else:
+        bias_sp = None
 
     # Hourly RMSE
     rmse1  = np.sqrt(np.mean((melt_mm_hourly - emp1_h_trim)**2))
@@ -1324,19 +1433,56 @@ def main():
         ax8.set_xlabel('Time [days]')
         ax8.grid(True, alpha=0.3)
         ax8.set_title('Insulation Moisture Content')
-    
+
+    # ---- SWE & snow depth ----
+    ax_swe = plt.subplot(6, 2, 10)
+    # Python model SWE
+    melt_cumul_m  = np.cumsum(melt_rate_hist[:-1]) * dt   # m ice equivalent
+    SWE_py = np.maximum(0.0, Hs * rho_s - melt_cumul_m * rho_i)
+    ax_swe.plot(days[:-1], SWE_py, 'steelblue', linewidth=2, label='Python SWE')
+    if sp_swe is not None:
+        # Align SNOWPACK datetime index to simulation days-since-start axis
+        # Use the first timestamp of sp_index as the origin
+        from datetime import datetime as _dt
+        t0_sim = _dt(2024, 4, 1)  # same as comp_SNOWPACK_vs_python.py
+        sp_days = np.array([(ts - t0_sim).total_seconds() / 86400.0
+                            for ts in sp_index])
+        ax_swe.plot(sp_days, sp_swe.values, 'navy', linewidth=2,
+                    linestyle='--', label='SNOWPACK SWE (snow only)')
+        if sp_depth is not None:
+            ax_swe_r = ax_swe.twinx()
+            ax_swe_r.plot(sp_days, sp_depth.values, 'cornflowerblue',
+                          linewidth=1, alpha=0.5, label='SP depth [m]')
+            ax_swe_r.set_ylabel('Depth [m]', color='cornflowerblue')
+            ax_swe_r.tick_params(axis='y', labelcolor='cornflowerblue')
+            h1, l1 = ax_swe.get_legend_handles_labels()
+            h2, l2 = ax_swe_r.get_legend_handles_labels()
+            ax_swe.legend(h1 + h2, l1 + l2, loc='upper right', fontsize=7)
+        else:
+            ax_swe.legend(loc='upper right', fontsize=8)
+    else:
+        ax_swe.legend(loc='upper right', fontsize=8)
+    ax_swe.set_ylabel('SWE [kg/m²]')
+    ax_swe.set_xlabel('Time [days]')
+    ax_swe.grid(True, alpha=0.3)
+    ax_swe.set_title('Snow Water Equivalent & Depth')
+
     # ---- SMR comparison: cumulative [mm] ----
     ax_cmp1 = plt.subplot(6, 2, 11)
     ax_cmp1.plot(days_hourly, snowsim_cs,    color='steelblue',   linewidth=2,   label='Snowsim v4 (RC model)')
     ax_cmp1.plot(days_hourly, tdma_cs_trim,  color='purple',      linewidth=1.5, linestyle='-.',  label='Transient 1D (TDMA)')
     ax_cmp1.plot(days_hourly, emp1_cs_trim,  color='darkorange',  linewidth=1.5, linestyle='--',  label='Emp. 1  (T + solar + wind)')
     ax_cmp1.plot(days_hourly, emp2_cs_trim,  color='forestgreen', linewidth=1.5, linestyle=':',   label='Emp. 2  (+ humidity)')
+    if sp_cs is not None:
+        ax_cmp1.plot(days_hourly, sp_cs,     color='darkred',     linewidth=1.5, linestyle=(0,(5,2,1,2)), label='SNOWPACK (runoff)')
     ax_cmp1.set_ylabel('Cumulative melt [mm w.e.]')
     ax_cmp1.set_xlabel('Time [days]')
     ax_cmp1.legend(loc='upper left', fontsize=8)
     ax_cmp1.grid(True, alpha=0.3)
+    _sp_bias_str = (f'  |  Bias vs SP: {bias_sp:+.1f} mm' if sp_cs is not None else '')
     ax_cmp1.set_title(f'Cumulative SMR Comparison\n'
-                      f'Bias vs Emp1: {bias1:+.1f} mm  |  Bias vs TDMA: {bias_t:+.1f} mm')
+                      f'Bias vs Emp1: {bias1:+.1f} mm  |  Bias vs TDMA: {bias_t:+.1f} mm'
+                      + _sp_bias_str)
 
     # ---- SMR comparison: hourly melt rate [mm/h] ----
     ax_cmp2 = plt.subplot(6, 2, 12)
@@ -1352,8 +1498,8 @@ def main():
                       f'RMSE vs Emp1: {rmse1:.3f} mm/h  |  RMSE vs TDMA: {rmse_t:.3f} mm/h')
 
     plt.tight_layout()
-    plt.savefig('snow_storage_simulation_v3.png', dpi=150, bbox_inches='tight')
-    print("  Saved plot: snow_storage_simulation_v3.png")
+    plt.savefig('snow_storage_simulation_v4.png', dpi=150, bbox_inches='tight')
+    print("  Saved plot: snow_storage_simulation_v4.png")
     #plt.show()
     
     print("\n" + "="*60)
