@@ -63,6 +63,10 @@ k_i_base = 0.07       # base conductivity [W/(m K)]
 rho_dry  = 200.0      # dry density [kg/m³]
 c_dry    = 1.5e3     # dry specific heat [J/(kg K)]
 
+# Offset to remove woodchip mass from SNOWPACK SWE calculation
+# (40kg water + 22.53kg solid mass)
+WOODCHIP_OFFSET = 62.53
+
 # Advanced insulation parameters (dict consumed by insulation_step)
 _INS_PAR = {
     "Hi":             Hi,
@@ -597,7 +601,8 @@ def make_comparison_plot(py, sp, out_path):
     ax = axes[1]
     ax.plot(d_py, py['SWE'][idx], 'steelblue', lw=2.5, label='Python SWE')
     if 'SWE (of snowpack)' in sp.columns:
-        ax.plot(sp.index, sp['SWE (of snowpack)'], 'navy', lw=2, ls='--', label='SNOWPACK SWE')
+        #ax.plot(sp.index, sp['SWE (of snowpack)'], 'navy', lw=2, ls='--', label='SNOWPACK SWE')
+        ax.plot(sp.index, sp['SWE (of snowpack)'] - WOODCHIP_OFFSET, 'navy', lw=2, ls='--', label='SNOWPACK SWE (Snow Only)')
     if 'Modelled snow depth (vertical)' in sp.columns:
         ax2b = ax.twinx()
         ax2b.plot(sp.index, sp['Modelled snow depth (vertical)'] / 100,
@@ -698,11 +703,11 @@ def print_summary(py, sp):
 
     rows = [
         ("Initial SWE (kg/m²)",
-         f"{py['SWE'][0]:.0f}",
-         _sp('SWE (of snowpack)')),
+        f"{py['SWE'][0]:.0f}",
+        f"{sp['SWE (of snowpack)'].iloc[0] - WOODCHIP_OFFSET:.0f}"),
         ("Final SWE (kg/m²)",
-         f"{py['SWE'][-1]:.0f}",
-         _sp('SWE (of snowpack)', '.1f')),  # uses iloc[0] — placeholder
+        f"{py['SWE'][-1]:.0f}",
+        f"{sp['SWE (of snowpack)'].iloc[-1] - WOODCHIP_OFFSET:.1f}"), # Changed from _sp to iloc[-1]
         ("Cumul. melt  (mm w.e.)",
          f"{py['melt_cumul'][-1] * rho_w:.0f}",
          f"{sp_runoff_total:.0f}"),
