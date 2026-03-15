@@ -805,8 +805,9 @@ def insulation_step(state_in, forc, p, dt):
 #  SNOWPACK .met reader  (ported from comp_SNOWPACK_vs_python.py)
 # ============================================================
 
-# Offset to remove woodchip mass from SNOWPACK SWE (40 kg water + 22.53 kg solid)
-WOODCHIP_OFFSET = 62.53
+# Offset to remove woodchip mass from SNOWPACK SWE (40 kg water + 22.53 =  62.53 kg solid)
+# Layer_Thick * Vol_Frac_W * rho_water  +  Layer_Thick * Vol_Frac_S * rho_insulation
+WOODCHIP_OFFSET = 72.53
 
 def read_snowpack_met(met_path):
     """
@@ -847,14 +848,18 @@ def read_snowpack_met(met_path):
     return df, col_units
 
 
-def load_snowpack_smr(met_path, n_full_hours):
+def load_snowpack_smr(met_path):
     """
-    Load SNOWPACK .met file and return hourly cumulative runoff array
-    trimmed to n_full_hours, plus SWE and depth arrays for the SWE plot.
+    Load SNOWPACK .met file and return the full hourly cumulative runoff
+    array plus SWE and depth arrays for the SWE plot.
+
+    Returns the full-length array so the caller can use sp_cs[-1] as the
+    true total (matching comp_SNOWPACK_vs_python.py) and slice [:n_full_hours]
+    only when needed for plot alignment.
 
     Returns
     -------
-    sp_cs       : np.ndarray  cumulative runoff [kg/m²], length n_full_hours
+    sp_cs       : np.ndarray  cumulative runoff [kg/m²], full length
     sp_swe      : pd.Series   SWE (snow only) [kg/m²]
     sp_depth    : pd.Series   snow depth [m]  (or None)
     sp_index    : DatetimeIndex
@@ -863,12 +868,10 @@ def load_snowpack_smr(met_path, n_full_hours):
 
     sp_runoff_col = 'Snowpack runoff (virtual lysimeter -- snow only)'
     if sp_runoff_col in sp.columns:
-        sp_runoff_h = sp[sp_runoff_col].fillna(0).values  # kg/m² per hour
-        sp_cs_full  = np.cumsum(sp_runoff_h)
-        sp_cs = sp_cs_full[:n_full_hours]
+        sp_cs = np.cumsum(sp[sp_runoff_col].fillna(0).values)
     else:
         print("  WARNING: SNOWPACK runoff column not found in .met file.")
-        sp_cs = np.zeros(n_full_hours)
+        sp_cs = np.zeros(len(sp))
 
     sp_swe = None
     if 'SWE (of snowpack)' in sp.columns:
@@ -1289,8 +1292,8 @@ def main():
     # ---- Load SNOWPACK arrays (optional) ----
     if snowpack_available:
         print(f"\nLoading SNOWPACK .met data...")
-        sp_cs, sp_swe, sp_depth, sp_index = load_snowpack_smr(SNOWPACK_MET, n_full_hours)
-        print(f"  SNOWPACK cumulative runoff (trimmed): {sp_cs[-1]:.1f} kg/m²")
+        sp_cs, sp_swe, sp_depth, sp_index = load_snowpack_smr(SNOWPACK_MET)
+        print(f"  SNOWPACK cumulative runoff: {sp_cs[-1]:.1f} kg/m²")
     else:
         sp_cs   = None
         sp_swe  = None
@@ -1474,7 +1477,7 @@ def main():
     ax_cmp1.plot(days_hourly, emp1_cs_trim,  color='darkorange',  linewidth=1.5, linestyle='--',  label='Emp. 1  (T + solar + wind)')
     ax_cmp1.plot(days_hourly, emp2_cs_trim,  color='forestgreen', linewidth=1.5, linestyle=':',   label='Emp. 2  (+ humidity)')
     if sp_cs is not None:
-        ax_cmp1.plot(days_hourly, sp_cs,     color='darkred',     linewidth=1.5, linestyle=(0,(5,2,1,2)), label='SNOWPACK (runoff)')
+        ax_cmp1.plot(days_hourly, sp_cs[:n_full_hours], color='darkred',     linewidth=1.5, linestyle=(0,(5,2,1,2)), label='SNOWPACK (runoff)')
     ax_cmp1.set_ylabel('Cumulative melt [mm w.e.]')
     ax_cmp1.set_xlabel('Time [days]')
     ax_cmp1.legend(loc='upper left', fontsize=8)
